@@ -1,0 +1,328 @@
+import { useEffect, useState } from "react";
+import {
+  BarChart3,
+  ClipboardList,
+  LayoutDashboard,
+  UsersRound,
+} from "lucide-react";
+import WorkerForm from "./components/WorkerForm";
+import AdminDashboard from "./components/AdminDashboard";
+import SalesRecords from "./components/SalesRecords";
+import WorkerManagement from "./components/WorkerManagement";
+import logo from "./assets/logo.png";
+
+const ORDERS_STORAGE_KEY = "mk4-auto-care-orders";
+const WORKERS_STORAGE_KEY = "mk4-auto-care-workers";
+const COMMISSION_STORAGE_KEY = "mk4-auto-care-commission-settings";
+
+const defaultWorkers = [
+  {
+    id: "worker-frank",
+    name: "Frank",
+    role: "Washer",
+    phone: "",
+    address: "",
+    status: "Active",
+    dateJoined: "2026-04-01",
+    notes: "Sample worker profile.",
+    commissionMode: "inherit",
+    commissionValue: "",
+  },
+  {
+    id: "worker-john",
+    name: "John",
+    role: "Washer",
+    phone: "",
+    address: "",
+    status: "Active",
+    dateJoined: "2026-04-01",
+    notes: "",
+    commissionMode: "inherit",
+    commissionValue: "",
+  },
+];
+
+const defaultCommissionSettings = {
+  globalMode: "service_percent",
+  globalValue: "100",
+};
+
+const sampleOrders = [
+  {
+    id: "SO-20260413-001",
+    date: "2026-04-13",
+    plateNumber: "EMERALD WFO 8289",
+    customerName: "",
+    contactNumber: "",
+    carType: "Medium",
+    workerId: "worker-frank",
+    washerName: "Frank",
+    manager: "Manager",
+    services: [
+      {
+        id: "service-1",
+        category: "Wash and Wax",
+        size: "Medium",
+        price: 880,
+        commissionType: "Washing",
+        commissionRate: 30,
+      },
+    ],
+    selectedAddOns: [],
+    paymentEnabled: {
+      cash: false,
+      gcash: true,
+      credit: false,
+      discount: false,
+    },
+    serviceTotal: 880,
+    addOnTotal: 0,
+    total: 880,
+    cash: "",
+    gcash: "880",
+    credit: "",
+    discount: "",
+    totalPaid: 880,
+    balance: 0,
+    commission: 264,
+    commissionLabel: "Service percentage",
+    referenceNo: "3039731622544",
+    photoName: "proof-photo.jpg",
+    notes: "",
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "SO-20260413-002",
+    date: "2026-04-13",
+    plateNumber: "ABC 1234",
+    customerName: "",
+    contactNumber: "",
+    carType: "Large",
+    workerId: "worker-john",
+    washerName: "John",
+    manager: "Manager",
+    services: [
+      {
+        id: "service-2",
+        category: "Premium Wash",
+        size: "Large",
+        price: 280,
+        commissionType: "Washing",
+        commissionRate: 30,
+      },
+    ],
+    selectedAddOns: ["Mr Pink"],
+    paymentEnabled: {
+      cash: true,
+      gcash: false,
+      credit: false,
+      discount: false,
+    },
+    serviceTotal: 280,
+    addOnTotal: 100,
+    total: 380,
+    cash: "380",
+    gcash: "",
+    credit: "",
+    discount: "",
+    totalPaid: 380,
+    balance: 0,
+    commission: 84,
+    commissionLabel: "Service percentage",
+    referenceNo: "",
+    photoName: "",
+    notes: "",
+    createdAt: new Date().toISOString(),
+  },
+];
+
+function safeJsonParse(value, fallback) {
+  try {
+    return value ? JSON.parse(value) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export default function App() {
+  const [activePage, setActivePage] = useState("form");
+
+  const [orders, setOrders] = useState(() => {
+    return safeJsonParse(localStorage.getItem(ORDERS_STORAGE_KEY), sampleOrders);
+  });
+
+  const [workers, setWorkers] = useState(() => {
+    return safeJsonParse(localStorage.getItem(WORKERS_STORAGE_KEY), defaultWorkers);
+  });
+
+  const [commissionSettings, setCommissionSettings] = useState(() => {
+    return safeJsonParse(
+      localStorage.getItem(COMMISSION_STORAGE_KEY),
+      defaultCommissionSettings
+    );
+  });
+
+  useEffect(() => {
+    localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
+  }, [orders]);
+
+  useEffect(() => {
+    localStorage.setItem(WORKERS_STORAGE_KEY, JSON.stringify(workers));
+  }, [workers]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      COMMISSION_STORAGE_KEY,
+      JSON.stringify(commissionSettings)
+    );
+  }, [commissionSettings]);
+
+  function addOrder(order) {
+    setOrders((prev) => [order, ...prev]);
+    setActivePage("dashboard");
+  }
+
+  function clearOrders() {
+    const confirmClear = confirm(
+      "This will clear all demo orders from this browser. Continue?"
+    );
+
+    if (!confirmClear) return;
+
+    setOrders([]);
+  }
+
+  function addWorker(worker) {
+    setWorkers((prev) => [worker, ...prev]);
+  }
+
+  function updateWorker(workerId, updatedWorker) {
+    setWorkers((prev) =>
+      prev.map((worker) =>
+        worker.id === workerId ? { ...worker, ...updatedWorker } : worker
+      )
+    );
+  }
+
+  function deleteWorker(workerId) {
+    const hasOrders = orders.some((order) => order.workerId === workerId);
+
+    if (hasOrders) {
+      alert(
+        "This worker already has sales records. Set their status to Inactive instead of deleting them."
+      );
+      return;
+    }
+
+    const confirmDelete = confirm("Delete this worker profile?");
+    if (!confirmDelete) return;
+
+    setWorkers((prev) => prev.filter((worker) => worker.id !== workerId));
+  }
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-logo-wrap">
+            <img src={logo} alt="MK4 Auto Care" />
+          </div>
+          <div>
+            <h1>MK4 Auto Care</h1>
+            <p>Carwash POS Prototype</p>
+          </div>
+        </div>
+
+        <nav>
+          <button
+            className={activePage === "form" ? "active" : ""}
+            onClick={() => setActivePage("form")}
+          >
+            <ClipboardList size={18} />
+            Worker Form
+          </button>
+
+          <button
+            className={activePage === "dashboard" ? "active" : ""}
+            onClick={() => setActivePage("dashboard")}
+          >
+            <LayoutDashboard size={18} />
+            Admin Dashboard
+          </button>
+
+          <button
+            className={activePage === "records" ? "active" : ""}
+            onClick={() => setActivePage("records")}
+          >
+            <BarChart3 size={18} />
+            Sales Records
+          </button>
+
+          <button
+            className={activePage === "workers" ? "active" : ""}
+            onClick={() => setActivePage("workers")}
+          >
+            <UsersRound size={18} />
+            Workers
+          </button>
+        </nav>
+
+        {/* <div className="sidebar-note">
+          <strong>Prototype only</strong>
+          <p>
+            Data is saved in browser localStorage. CSV export is available in
+            Sales Records. Later, this can be connected to Google Sheets,
+            Supabase, Firebase, or Airtable.
+          </p>
+        </div> */}
+      </aside>
+
+      <main className="main-content">
+        <header className="topbar">
+          <div>
+            <span className="eyebrow">Paper Sales Order to Digital POS</span>
+            <h2>
+              {activePage === "form" && "Worker Carwash Entry"}
+              {activePage === "dashboard" && "Admin Analytics Dashboard"}
+              {activePage === "records" && "Sales Order Records"}
+              {activePage === "workers" && "Workers and Commission"}
+            </h2>
+          </div>
+        </header>
+
+        {activePage === "form" && (
+          <WorkerForm
+            onAddOrder={addOrder}
+            orders={orders}
+            workers={workers}
+            commissionSettings={commissionSettings}
+          />
+        )}
+
+        {activePage === "dashboard" && (
+          <AdminDashboard orders={orders} workers={workers} />
+        )}
+
+        {activePage === "records" && (
+          <SalesRecords
+            orders={orders}
+            workers={workers}
+            onClearOrders={clearOrders}
+          />
+        )}
+
+        {activePage === "workers" && (
+          <WorkerManagement
+            workers={workers}
+            orders={orders}
+            onAddWorker={addWorker}
+            onUpdateWorker={updateWorker}
+            onDeleteWorker={deleteWorker}
+            commissionSettings={commissionSettings}
+            onUpdateCommissionSettings={setCommissionSettings}
+          />
+        )}
+      </main>
+    </div>
+  );
+}
