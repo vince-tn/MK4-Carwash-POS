@@ -280,7 +280,7 @@ export default function App() {
       <main className="main-content">
         <header className="topbar">
           <div>
-            <span className="eyebrow">Paper Sales Order to Digital POS</span>
+            <span className="eyebrow">MK4 POS</span>
             <h2>
               {activePage === "form" && "Worker Carwash Entry"}
               {activePage === "dashboard" && "Admin Analytics Dashboard"}
