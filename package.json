@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.108.2",
+    "browser-image-compression": "^2.0.2",
     "lucide-react": "^1.17.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
