@@ -191,6 +191,49 @@ export default function App() {
 
     setOrders([]);
   }
+  
+  function updateOrderPayment(orderId, paymentUpdate) {
+    setOrders((prev) =>
+      prev.map((order) => {
+        if (order.id !== orderId) return order;
+
+        const updatedOrder = {
+          ...order,
+          paymentEnabled: paymentUpdate.paymentEnabled,
+          cash: paymentUpdate.cash,
+          gcash: paymentUpdate.gcash,
+          credit: paymentUpdate.credit,
+          discount: paymentUpdate.discount,
+          referenceNo: paymentUpdate.referenceNo,
+          paymentNotes: paymentUpdate.paymentNotes,
+          paymentUpdatedAt: new Date().toISOString(),
+        };
+
+        const discount = updatedOrder.paymentEnabled?.discount
+          ? Number(updatedOrder.discount) || 0
+          : 0;
+
+        const total = Math.max(
+          Number(updatedOrder.serviceTotal || 0) +
+            Number(updatedOrder.addOnTotal || 0) -
+            discount,
+          0
+        );
+
+        const totalPaid =
+          (updatedOrder.paymentEnabled?.cash ? Number(updatedOrder.cash) || 0 : 0) +
+          (updatedOrder.paymentEnabled?.gcash ? Number(updatedOrder.gcash) || 0 : 0) +
+          (updatedOrder.paymentEnabled?.credit ? Number(updatedOrder.credit) || 0 : 0);
+
+        return {
+          ...updatedOrder,
+          total,
+          totalPaid,
+          balance: total - totalPaid,
+        };
+      })
+    );
+  }
 
   function addWorker(worker) {
     setWorkers((prev) => [worker, ...prev]);
@@ -308,6 +351,7 @@ export default function App() {
             orders={orders}
             workers={workers}
             onClearOrders={clearOrders}
+            onUpdateOrderPayment={updateOrderPayment}
           />
         )}
 

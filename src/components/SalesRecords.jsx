@@ -61,9 +61,227 @@ function sortOrders(orders, sortBy) {
   return sorted;
 }
 
-export default function SalesRecords({ orders, workers, onClearOrders }) {
+function PaymentEditModal({ order, onClose, onSave }) {
+  const [paymentForm, setPaymentForm] = useState({
+    paymentEnabled: {
+      cash: Boolean(order.paymentEnabled?.cash),
+      gcash: Boolean(order.paymentEnabled?.gcash),
+      credit: Boolean(order.paymentEnabled?.credit),
+      discount: Boolean(order.paymentEnabled?.discount),
+    },
+    cash: order.cash || "",
+    gcash: order.gcash || "",
+    credit: order.credit || "",
+    discount: order.discount || "",
+    referenceNo: order.referenceNo || "",
+    paymentNotes: order.paymentNotes || "",
+  });
+
+  const discount = paymentForm.paymentEnabled.discount
+    ? Number(paymentForm.discount) || 0
+    : 0;
+
+  const updatedTotal = Math.max(
+    Number(order.serviceTotal || 0) + Number(order.addOnTotal || 0) - discount,
+    0
+  );
+
+  const updatedPaid =
+    (paymentForm.paymentEnabled.cash ? Number(paymentForm.cash) || 0 : 0) +
+    (paymentForm.paymentEnabled.gcash ? Number(paymentForm.gcash) || 0 : 0) +
+    (paymentForm.paymentEnabled.credit ? Number(paymentForm.credit) || 0 : 0);
+
+  const updatedBalance = updatedTotal - updatedPaid;
+
+  function updateField(field, value) {
+    setPaymentForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  }
+
+  function togglePayment(method) {
+    setPaymentForm((prev) => ({
+      ...prev,
+      paymentEnabled: {
+        ...prev.paymentEnabled,
+        [method]: !prev.paymentEnabled[method],
+      },
+      [method]: prev.paymentEnabled[method] ? "" : prev[method],
+    }));
+  }
+
+  function handleSubmit(e) {
+    e.preventDefault();
+
+    onSave(order.id, paymentForm);
+    onClose();
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <form className="payment-modal" onSubmit={handleSubmit}>
+        <div className="modal-header">
+          <div>
+            <span className="eyebrow">Update Payment</span>
+            <h2>{order.id}</h2>
+            <p>
+              Plate: <strong>{order.plateNumber}</strong>
+            </p>
+          </div>
+
+          <button type="button" className="ghost-btn" onClick={onClose}>
+            Close
+          </button>
+        </div>
+
+        <div className="payment-summary-grid">
+          <div>
+            <span>Original Service/Add-on Total</span>
+            <strong>
+              {peso.format(
+                Number(order.serviceTotal || 0) + Number(order.addOnTotal || 0)
+              )}
+            </strong>
+          </div>
+
+          <div>
+            <span>Updated Total</span>
+            <strong>{peso.format(updatedTotal)}</strong>
+          </div>
+
+          <div>
+            <span>Updated Paid</span>
+            <strong>{peso.format(updatedPaid)}</strong>
+          </div>
+
+          <div>
+            <span>Updated Balance</span>
+            <strong
+              className={updatedBalance > 0 ? "danger-text" : "success-text"}
+            >
+              {peso.format(updatedBalance)}
+            </strong>
+          </div>
+        </div>
+
+        <div className="payment-grid modal-payment-grid">
+          <label className="check-label">
+            <input
+              type="checkbox"
+              checked={paymentForm.paymentEnabled.cash}
+              onChange={() => togglePayment("cash")}
+            />
+            Cash
+          </label>
+
+          <label className="check-label">
+            <input
+              type="checkbox"
+              checked={paymentForm.paymentEnabled.gcash}
+              onChange={() => togglePayment("gcash")}
+            />
+            GCash
+          </label>
+
+          <label className="check-label">
+            <input
+              type="checkbox"
+              checked={paymentForm.paymentEnabled.credit}
+              onChange={() => togglePayment("credit")}
+            />
+            Credit
+          </label>
+
+          <label className="check-label">
+            <input
+              type="checkbox"
+              checked={paymentForm.paymentEnabled.discount}
+              onChange={() => togglePayment("discount")}
+            />
+            Discount
+          </label>
+        </div>
+
+        <div className="form-grid">
+          <label>
+            Cash Amount
+            <input
+              type="number"
+              disabled={!paymentForm.paymentEnabled.cash}
+              value={paymentForm.cash}
+              onChange={(e) => updateField("cash", e.target.value)}
+            />
+          </label>
+
+          <label>
+            GCash Amount
+            <input
+              type="number"
+              disabled={!paymentForm.paymentEnabled.gcash}
+              value={paymentForm.gcash}
+              onChange={(e) => updateField("gcash", e.target.value)}
+            />
+          </label>
+
+          <label>
+            Credit Amount
+            <input
+              type="number"
+              disabled={!paymentForm.paymentEnabled.credit}
+              value={paymentForm.credit}
+              onChange={(e) => updateField("credit", e.target.value)}
+            />
+          </label>
+
+          <label>
+            Discount Amount
+            <input
+              type="number"
+              disabled={!paymentForm.paymentEnabled.discount}
+              value={paymentForm.discount}
+              onChange={(e) => updateField("discount", e.target.value)}
+            />
+          </label>
+
+          <label>
+            Reference Number
+            <input
+              type="text"
+              value={paymentForm.referenceNo}
+              onChange={(e) => updateField("referenceNo", e.target.value)}
+              placeholder="GCash / receipt / bank reference"
+            />
+          </label>
+
+          <label className="wide-field">
+            Payment Notes
+            <input
+              type="text"
+              value={paymentForm.paymentNotes}
+              onChange={(e) => updateField("paymentNotes", e.target.value)}
+              placeholder="Example: Customer paid remaining balance today"
+            />
+          </label>
+        </div>
+
+        <button className="submit-btn" type="submit">
+          Save Payment Update
+        </button>
+      </form>
+    </div>
+  );
+}
+
+export default function SalesRecords({
+  orders,
+  workers,
+  onClearOrders,
+  onUpdateOrderPayment,
+}) {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("newest");
+  const [editingPaymentOrder, setEditingPaymentOrder] = useState(null);
 
   const [filters, setFilters] = useState({
     dateFrom: "",
@@ -200,6 +418,8 @@ export default function SalesRecords({ orders, workers, onClearOrders }) {
       "Commission",
       "Commission Rule",
       "Reference Number",
+      "Payment Notes",
+      "Payment Updated At",
       "Photo Proof",
       "Notes",
       "Created At",
@@ -236,6 +456,8 @@ export default function SalesRecords({ orders, workers, onClearOrders }) {
         order.commission,
         order.commissionLabel,
         order.referenceNo,
+        order.paymentNotes,
+        order.paymentUpdatedAt,
         order.photoName,
         order.notes,
         order.createdAt,
@@ -392,13 +614,13 @@ export default function SalesRecords({ orders, workers, onClearOrders }) {
               <th>Plate</th>
               <th>Worker</th>
               <th>Services</th>
-              <th>Add-ons</th>
               <th>Payment</th>
               <th>Ref No.</th>
               <th>Total</th>
+              <th>Paid</th>
               <th>Balance</th>
               <th>Commission</th>
-              <th>Proof</th>
+              <th>Actions</th>
             </tr>
           </thead>
 
@@ -435,12 +657,6 @@ export default function SalesRecords({ orders, workers, onClearOrders }) {
                   </td>
 
                   <td>
-                    {order.selectedAddOns?.length > 0
-                      ? order.selectedAddOns.join(", ")
-                      : "—"}
-                  </td>
-
-                  <td>
                     {order.paymentEnabled?.cash && (
                       <>
                         Cash: {peso.format(Number(order.cash) || 0)}
@@ -460,13 +676,24 @@ export default function SalesRecords({ orders, workers, onClearOrders }) {
                       </>
                     )}
                     {order.paymentEnabled?.discount && (
-                      <>Discount: {peso.format(Number(order.discount) || 0)}</>
+                      <>
+                        Discount: {peso.format(Number(order.discount) || 0)}
+                        <br />
+                      </>
+                    )}
+                    {order.paymentUpdatedAt && (
+                      <small>
+                        Updated:{" "}
+                        {new Date(order.paymentUpdatedAt).toLocaleString()}
+                      </small>
                     )}
                   </td>
 
                   <td>{order.referenceNo || "—"}</td>
 
                   <td>{peso.format(order.total)}</td>
+
+                  <td>{peso.format(order.totalPaid)}</td>
 
                   <td
                     className={
@@ -484,13 +711,28 @@ export default function SalesRecords({ orders, workers, onClearOrders }) {
                     <small>{order.commissionLabel}</small>
                   </td>
 
-                  <td>{order.photoName || "No file"}</td>
+                  <td>
+                    <button
+                      className="table-action-btn"
+                      onClick={() => setEditingPaymentOrder(order)}
+                    >
+                      Edit Payment
+                    </button>
+                  </td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </div>
+
+      {editingPaymentOrder && (
+        <PaymentEditModal
+          order={editingPaymentOrder}
+          onClose={() => setEditingPaymentOrder(null)}
+          onSave={onUpdateOrderPayment}
+        />
+      )}
     </section>
   );
 }
