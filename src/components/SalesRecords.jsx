@@ -716,7 +716,7 @@ export default function SalesRecords({
                       className="table-action-btn"
                       onClick={() => setEditingPaymentOrder(order)}
                     >
-                      Edit Payment
+                      ✎
                     </button>
                   </td>
                 </tr>
