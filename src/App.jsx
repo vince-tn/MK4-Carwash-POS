@@ -4,12 +4,15 @@ import {
   ClipboardList,
   LayoutDashboard,
   UsersRound,
+  LogOut,
 } from "lucide-react";
 import WorkerForm from "./components/WorkerForm";
 import AdminDashboard from "./components/AdminDashboard";
 import SalesRecords from "./components/SalesRecords";
 import WorkerManagement from "./components/WorkerManagement";
 import logo from "./assets/logo.png";
+import { supabase } from "./lib/supabaseClient";
+import AuthPage from "./components/AuthPage";
 
 const ORDERS_STORAGE_KEY = "mk4-auto-care-orders";
 const WORKERS_STORAGE_KEY = "mk4-auto-care-workers";
@@ -146,7 +149,8 @@ function safeJsonParse(value, fallback) {
 
 export default function App() {
   const [activePage, setActivePage] = useState("form");
-
+  const [session, setSession] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [orders, setOrders] = useState(() => {
     return safeJsonParse(localStorage.getItem(ORDERS_STORAGE_KEY), sampleOrders);
   });
@@ -176,6 +180,33 @@ export default function App() {
       JSON.stringify(commissionSettings)
     );
   }, [commissionSettings]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function getSession() {
+      const { data } = await supabase.auth.getSession();
+
+      if (isMounted) {
+        setSession(data.session);
+        setAuthChecked(true);
+      }
+    }
+
+    getSession();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      setSession(currentSession);
+      setAuthChecked(true);
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   function addOrder(order) {
     setOrders((prev) => [order, ...prev]);
@@ -263,6 +294,19 @@ export default function App() {
     setWorkers((prev) => prev.filter((worker) => worker.id !== workerId));
   }
 
+  const protectedPages = ["dashboard", "records", "workers"];
+  const needsAuth = protectedPages.includes(activePage);
+  const isLoggedIn = Boolean(session);
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    setSession(null);
+    setActivePage("form");
+  }
+
+  function goToPage(page) {
+    setActivePage(page);
+  }
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -279,7 +323,7 @@ export default function App() {
         <nav>
           <button
             className={activePage === "form" ? "active" : ""}
-            onClick={() => setActivePage("form")}
+            onClick={() => goToPage("form")}
           >
             <ClipboardList size={18} />
             Worker Form
@@ -287,7 +331,7 @@ export default function App() {
 
           <button
             className={activePage === "dashboard" ? "active" : ""}
-            onClick={() => setActivePage("dashboard")}
+            onClick={() => goToPage("dashboard")}
           >
             <LayoutDashboard size={18} />
             Admin Dashboard
@@ -295,7 +339,7 @@ export default function App() {
 
           <button
             className={activePage === "records" ? "active" : ""}
-            onClick={() => setActivePage("records")}
+            onClick={() => goToPage("records")}
           >
             <BarChart3 size={18} />
             Sales Records
@@ -303,13 +347,19 @@ export default function App() {
 
           <button
             className={activePage === "workers" ? "active" : ""}
-            onClick={() => setActivePage("workers")}
+            onClick={() => goToPage("workers")}
           >
             <UsersRound size={18} />
             Workers
           </button>
         </nav>
-
+        
+        {isLoggedIn && (
+          <button className="logout-btn" onClick={handleLogout}>
+            <LogOut size={18} />
+            Logout
+          </button>
+        )}
         {/* <div className="sidebar-note">
           <strong>Prototype only</strong>
           <p>
@@ -333,6 +383,16 @@ export default function App() {
           </div>
         </header>
 
+        {!authChecked && needsAuth && (
+          <div className="form-card">
+            <h2>Checking admin access...</h2>
+          </div>
+        )}
+
+        {authChecked && needsAuth && !isLoggedIn && (
+          <AuthPage onLoginSuccess={(newSession) => setSession(newSession)} />
+        )}
+
         {activePage === "form" && (
           <WorkerForm
             onAddOrder={addOrder}
@@ -342,11 +402,11 @@ export default function App() {
           />
         )}
 
-        {activePage === "dashboard" && (
+        {authChecked && isLoggedIn && activePage === "dashboard" && (
           <AdminDashboard orders={orders} workers={workers} />
         )}
 
-        {activePage === "records" && (
+        {authChecked && isLoggedIn && activePage === "records" && (
           <SalesRecords
             orders={orders}
             workers={workers}
@@ -355,7 +415,7 @@ export default function App() {
           />
         )}
 
-        {activePage === "workers" && (
+        {authChecked && isLoggedIn && activePage === "workers" && (
           <WorkerManagement
             workers={workers}
             orders={orders}

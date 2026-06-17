@@ -1093,3 +1093,68 @@ td {
     grid-template-columns: 1fr;
   }
 }
+
+.auth-page {
+  min-height: 60vh;
+  display: grid;
+  place-items: center;
+}
+
+.auth-card {
+  width: min(480px, 100%);
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 26px;
+  box-shadow: var(--shadow);
+  padding: 28px;
+}
+
+.auth-card h2 {
+  margin: 8px 0 8px;
+  color: var(--black);
+}
+
+.auth-card p {
+  margin: 0 0 22px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.auth-form {
+  display: grid;
+  gap: 16px;
+}
+
+.auth-message {
+  background: #fafafa;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 14px;
+  color: var(--black);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.auth-switch {
+  margin-top: 14px;
+  width: 100%;
+}
+
+.logout-btn {
+  margin-top: 14px;
+  width: 100%;
+  border: 0;
+  background: rgba(239, 31, 45, 0.14);
+  color: white;
+  padding: 13px 14px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.logout-btn:hover {
+  background: var(--red);
+}
