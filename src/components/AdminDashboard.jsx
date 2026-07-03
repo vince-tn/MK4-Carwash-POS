@@ -155,10 +155,6 @@ export default function AdminDashboard({ orders, workers }) {
           onClick={() => toggleCard("commission")}
           active={expandedCard === "commission"}
         />
-        <StatCard title="Cash Sales" value={peso.format(cashSales)} />
-        <StatCard title="GCash Sales" value={peso.format(gcashSales)} />
-        <StatCard title="Credit Sales" value={peso.format(creditSales)} />
-        <StatCard title="Discounts" value={peso.format(totalDiscount)} />
         <StatCard
           title="Top Worker"
           value={topWorker ? topWorker.worker : "—"}
@@ -170,6 +166,10 @@ export default function AdminDashboard({ orders, workers }) {
           onClick={() => toggleCard("topworker")}
           active={expandedCard === "topworker"}
         />
+        <StatCard title="GCash Sales" value={peso.format(gcashSales)} />
+        <StatCard title="Credit Sales" value={peso.format(creditSales)} />
+        <StatCard title="Discounts" value={peso.format(totalDiscount)} />
+        <StatCard title="Cash Sales" value={peso.format(cashSales)} />
       </div>
 
       {activePanel && (
