@@ -2,21 +2,27 @@ import { useEffect, useState } from "react";
 import {
   BarChart3,
   ClipboardList,
+  Droplets,
   LayoutDashboard,
   UsersRound,
   LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import WorkerForm from "./components/WorkerForm";
 import AdminDashboard from "./components/AdminDashboard";
 import SalesRecords from "./components/SalesRecords";
 import WorkerManagement from "./components/WorkerManagement";
+import ServicesManagement from "./components/ServicesManagement";
 import logo from "./assets/logo.png";
 import { supabase } from "./lib/supabaseClient";
 import AuthPage from "./components/AuthPage";
+import { buildDefaultPricing, ensurePricingIds } from "./data/pricing";
 
 const ORDERS_STORAGE_KEY = "mk4-auto-care-orders";
 const WORKERS_STORAGE_KEY = "mk4-auto-care-workers";
 const COMMISSION_STORAGE_KEY = "mk4-auto-care-commission-settings";
+const PRICING_STORAGE_KEY = "mk4-auto-care-pricing";
 
 const defaultWorkers = [
   {
@@ -149,6 +155,7 @@ function safeJsonParse(value, fallback) {
 
 export default function App() {
   const [activePage, setActivePage] = useState("form");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [session, setSession] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [orders, setOrders] = useState(() => {
@@ -166,6 +173,11 @@ export default function App() {
     );
   });
 
+  const [pricing, setPricing] = useState(() => {
+    const stored = safeJsonParse(localStorage.getItem(PRICING_STORAGE_KEY), null);
+    return stored ? ensurePricingIds(stored) : buildDefaultPricing();
+  });
+
   useEffect(() => {
     localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
   }, [orders]);
@@ -180,6 +192,10 @@ export default function App() {
       JSON.stringify(commissionSettings)
     );
   }, [commissionSettings]);
+
+  useEffect(() => {
+    localStorage.setItem(PRICING_STORAGE_KEY, JSON.stringify(pricing));
+  }, [pricing]);
 
   useEffect(() => {
     let isMounted = true;
@@ -294,7 +310,7 @@ export default function App() {
     setWorkers((prev) => prev.filter((worker) => worker.id !== workerId));
   }
 
-  const protectedPages = ["dashboard", "records", "workers"];
+  const protectedPages = ["dashboard", "records", "workers", "services"];
   const needsAuth = protectedPages.includes(activePage);
   const isLoggedIn = Boolean(session);
 
@@ -308,56 +324,85 @@ export default function App() {
     setActivePage(page);
   }
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-logo-wrap">
-            <img src={logo} alt="MK4 Auto Care" />
+    <div className={`app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
+      <aside className={`sidebar${sidebarCollapsed ? " collapsed" : ""}`}>
+        <div className="sidebar-top">
+          <div className="brand">
+            <div className="brand-logo-wrap">
+              <img src={logo} alt="MK4 Auto Care" />
+            </div>
+            <div className="brand-text">
+              <h1>MK4 Auto Care</h1>
+              <p>Carwash POS Prototype</p>
+            </div>
           </div>
-          <div>
-            <h1>MK4 Auto Care</h1>
-            <p>Carwash POS Prototype</p>
-          </div>
+
+          <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={() => setSidebarCollapsed((prev) => !prev)}
+            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {sidebarCollapsed ? (
+              <PanelLeftOpen size={18} />
+            ) : (
+              <PanelLeftClose size={18} />
+            )}
+          </button>
         </div>
 
         <nav>
           <button
             className={activePage === "form" ? "active" : ""}
             onClick={() => goToPage("form")}
+            title="Worker Form"
           >
             <ClipboardList size={18} />
-            Worker Form
+            <span className="nav-label">Worker Form</span>
           </button>
 
           <button
             className={activePage === "dashboard" ? "active" : ""}
             onClick={() => goToPage("dashboard")}
+            title="Admin Dashboard"
           >
             <LayoutDashboard size={18} />
-            Admin Dashboard
+            <span className="nav-label">Admin Dashboard</span>
           </button>
 
           <button
             className={activePage === "records" ? "active" : ""}
             onClick={() => goToPage("records")}
+            title="Sales Records"
           >
             <BarChart3 size={18} />
-            Sales Records
+            <span className="nav-label">Sales Records</span>
           </button>
 
           <button
             className={activePage === "workers" ? "active" : ""}
             onClick={() => goToPage("workers")}
+            title="Workers"
           >
             <UsersRound size={18} />
-            Workers
+            <span className="nav-label">Workers</span>
+          </button>
+
+          <button
+            className={activePage === "services" ? "active" : ""}
+            onClick={() => goToPage("services")}
+            title="Services"
+          >
+            <Droplets size={18} />
+            <span className="nav-label">Services</span>
           </button>
         </nav>
-        
+
         {isLoggedIn && (
-          <button className="logout-btn" onClick={handleLogout}>
+          <button className="logout-btn" onClick={handleLogout} title="Logout">
             <LogOut size={18} />
-            Logout
+            <span className="nav-label">Logout</span>
           </button>
         )}
         {/* <div className="sidebar-note">
@@ -379,6 +424,7 @@ export default function App() {
               {activePage === "dashboard" && "Admin Analytics Dashboard"}
               {activePage === "records" && "Sales Order Records"}
               {activePage === "workers" && "Workers and Commission"}
+              {activePage === "services" && "Services and Pricing"}
             </h2>
           </div>
         </header>
@@ -399,6 +445,8 @@ export default function App() {
             orders={orders}
             workers={workers}
             commissionSettings={commissionSettings}
+            pricingData={pricing.categories}
+            addOns={pricing.addOns}
           />
         )}
 
@@ -413,6 +461,10 @@ export default function App() {
             onClearOrders={clearOrders}
             onUpdateOrderPayment={updateOrderPayment}
           />
+        )}
+
+        {authChecked && isLoggedIn && activePage === "services" && (
+          <ServicesManagement pricing={pricing} onUpdatePricing={setPricing} />
         )}
 
         {authChecked && isLoggedIn && activePage === "workers" && (

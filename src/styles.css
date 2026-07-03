@@ -51,11 +51,75 @@ select {
   border-right: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.sidebar-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 34px;
+}
+
 .brand {
   display: flex;
   gap: 14px;
   align-items: center;
-  margin-bottom: 34px;
+  min-width: 0;
+}
+
+.sidebar-toggle {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  color: #d4d4d8;
+  padding: 9px;
+  border-radius: 12px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+
+.sidebar-toggle:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: white;
+}
+
+.app-shell.sidebar-collapsed {
+  grid-template-columns: 92px 1fr;
+}
+
+.sidebar.collapsed {
+  padding: 24px 16px;
+}
+
+.sidebar.collapsed .sidebar-top {
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.sidebar.collapsed .brand {
+  justify-content: center;
+}
+
+.sidebar.collapsed .brand-text {
+  display: none;
+}
+
+.sidebar.collapsed .brand-logo-wrap {
+  width: 52px;
+  height: 42px;
+  border-radius: 12px;
+  box-shadow: 4px 4px 0 rgba(239, 31, 45, 0.28);
+}
+
+.sidebar.collapsed .nav-label {
+  display: none;
+}
+
+.sidebar.collapsed nav button,
+.sidebar.collapsed .logout-btn {
+  justify-content: center;
+  padding: 13px 0;
 }
 
 .brand-logo-wrap {
@@ -386,7 +450,7 @@ input:disabled {
 .payment-grid {
   padding: 18px 18px 0;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px;
 }
 
@@ -394,15 +458,19 @@ input:disabled {
   display: flex;
   flex-direction: row;
   align-items: center;
+  gap: 10px;
   background: #fafafa;
   border: 1px solid var(--line);
   padding: 13px;
   border-radius: 14px;
   cursor: pointer;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .check-label input {
   width: auto;
+  flex: 0 0 auto;
   accent-color: var(--red);
 }
 
@@ -693,7 +761,8 @@ td {
 }
 
 @media (max-width: 1200px) {
-  .app-shell {
+  .app-shell,
+  .app-shell.sidebar-collapsed {
     grid-template-columns: 1fr;
   }
 
@@ -704,6 +773,30 @@ td {
 
   .sidebar nav {
     grid-template-columns: repeat(3, 1fr);
+  }
+
+  /* On tablet/mobile the collapse toggle acts as a menu toggle */
+  .sidebar.collapsed {
+    padding: 18px 24px;
+  }
+
+  .sidebar.collapsed .sidebar-top {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 0;
+  }
+
+  .sidebar.collapsed .brand {
+    justify-content: flex-start;
+  }
+
+  .sidebar.collapsed .brand-text {
+    display: block;
+  }
+
+  .sidebar.collapsed nav,
+  .sidebar.collapsed .logout-btn {
+    display: none;
   }
 
   .sidebar-note {
@@ -1157,4 +1250,157 @@ td {
 
 .logout-btn:hover {
   background: var(--red);
+}
+
+/* Clickable / expandable stat cards */
+.stat-card.clickable {
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.12s ease;
+}
+
+.stat-card.clickable:hover {
+  transform: translateY(-2px);
+  border-color: var(--red);
+}
+
+.stat-card.active {
+  background: rgba(239, 31, 45, 0.05);
+  border-color: var(--red);
+}
+
+.stat-expand-hint {
+  display: block;
+  margin-top: 8px;
+  color: var(--red);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Worker reports */
+.report-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.report-header h3 {
+  margin: 0;
+  color: var(--black);
+}
+
+.report-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  margin-bottom: 16px;
+}
+
+.report-controls label {
+  min-width: 170px;
+}
+
+.toggle-group {
+  display: inline-flex;
+  gap: 4px;
+  background: #f3f4f6;
+  border: 1px solid var(--line);
+  padding: 4px;
+  border-radius: 14px;
+}
+
+.toggle-group button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 800;
+  padding: 9px 14px;
+  border-radius: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.toggle-group button.active {
+  background: #111;
+  color: white;
+}
+
+.report-table table {
+  min-width: 560px;
+}
+
+.report-total-row td {
+  font-weight: 900;
+  color: var(--black);
+  background: #f9fafb;
+}
+
+.report-controls .push-right {
+  margin-left: auto;
+}
+
+@media (max-width: 700px) {
+  .report-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .report-controls label {
+    min-width: 0;
+  }
+
+  .toggle-group button {
+    flex: 1;
+  }
+
+  .report-controls .push-right {
+    margin-left: 0;
+  }
+}
+
+/* Services & pricing admin page */
+.services-page {
+  display: grid;
+  gap: 22px;
+}
+
+.price-item-list {
+  display: grid;
+  gap: 10px;
+  margin: 4px 0 18px;
+}
+
+.price-item-list > strong {
+  color: var(--black);
+  margin-bottom: 4px;
+}
+
+.price-item-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.price-item-head {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.price-item-row .small-danger-btn {
+  justify-self: end;
+}
+
+@media (max-width: 700px) {
+  .price-item-row {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto;
+  }
 }

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Bar,
   BarChart,
@@ -11,6 +12,8 @@ import {
   YAxis,
 } from "recharts";
 import StatCard from "./StatCard";
+import WorkerReports from "./WorkerReports";
+import DashboardReport from "./DashboardReport";
 
 const peso = new Intl.NumberFormat("en-PH", {
   style: "currency",
@@ -18,6 +21,8 @@ const peso = new Intl.NumberFormat("en-PH", {
 });
 
 export default function AdminDashboard({ orders, workers }) {
+  const [expandedCard, setExpandedCard] = useState(null);
+
   const totalSales = orders.reduce((sum, order) => sum + Number(order.total || 0), 0);
   const totalCars = orders.length;
 
@@ -65,6 +70,7 @@ export default function AdminDashboard({ orders, workers }) {
     if (!workerMap[order.washerName]) {
       workerMap[order.washerName] = {
         worker: order.washerName,
+        workerId: order.workerId,
         cars: 0,
         commission: 0,
         sales: 0,
@@ -92,6 +98,27 @@ export default function AdminDashboard({ orders, workers }) {
   const topWorker = washerChartData[0];
   const activeWorkers = workers.filter((worker) => worker.status === "Active");
 
+  function toggleCard(cardKey) {
+    setExpandedCard((prev) => (prev === cardKey ? null : cardKey));
+  }
+
+  const expandedPanels = {
+    sales: {
+      title: "Sales Report — Payment Breakdown",
+    },
+    cars: {
+      title: "Cars Washed Report — By Car Type",
+    },
+    commission: {
+      title: "Commission Report — Per Worker",
+    },
+    topworker: {
+      title: `Worker Reports${topWorker ? ` — Top: ${topWorker.worker}` : ""}`,
+    },
+  };
+
+  const activePanel = expandedCard ? expandedPanels[expandedCard] : null;
+
   return (
     <section className="dashboard">
       <div className="dashboard-header">
@@ -109,10 +136,25 @@ export default function AdminDashboard({ orders, workers }) {
       </div>
 
       <div className="stats-grid">
-        <StatCard title="Total Sales" value={peso.format(totalSales)} />
-        <StatCard title="Total Cars" value={totalCars} subtext="Submitted orders" />
-        <StatCard title="Active Workers" value={activeWorkers.length} />
-        <StatCard title="Total Commission" value={peso.format(totalCommission)} />
+        <StatCard
+          title="Total Sales"
+          value={peso.format(totalSales)}
+          onClick={() => toggleCard("sales")}
+          active={expandedCard === "sales"}
+        />
+        <StatCard
+          title="Total Cars"
+          value={totalCars}
+          subtext="Submitted orders"
+          onClick={() => toggleCard("cars")}
+          active={expandedCard === "cars"}
+        />
+        <StatCard
+          title="Total Commission"
+          value={peso.format(totalCommission)}
+          onClick={() => toggleCard("commission")}
+          active={expandedCard === "commission"}
+        />
         <StatCard title="Cash Sales" value={peso.format(cashSales)} />
         <StatCard title="GCash Sales" value={peso.format(gcashSales)} />
         <StatCard title="Credit Sales" value={peso.format(creditSales)} />
@@ -120,9 +162,44 @@ export default function AdminDashboard({ orders, workers }) {
         <StatCard
           title="Top Worker"
           value={topWorker ? topWorker.worker : "—"}
-          subtext={topWorker ? peso.format(topWorker.sales) : "No data yet"}
+          subtext={
+            topWorker
+              ? `${peso.format(topWorker.sales)} • ${activeWorkers.length} active workers`
+              : `${activeWorkers.length} active workers`
+          }
+          onClick={() => toggleCard("topworker")}
+          active={expandedCard === "topworker"}
         />
       </div>
+
+      {activePanel && (
+        <div className="chart-card">
+          <div className="report-header">
+            <h3>{activePanel.title}</h3>
+            <button
+              className="ghost-btn"
+              onClick={() => setExpandedCard(null)}
+            >
+              Close ▲
+            </button>
+          </div>
+
+          {expandedCard === "topworker" ? (
+            <WorkerReports
+              orders={orders}
+              workers={workers}
+              initialView="individual"
+              initialWorkerId={topWorker?.workerId || ""}
+            />
+          ) : (
+            <DashboardReport
+              key={expandedCard}
+              orders={orders}
+              mode={expandedCard}
+            />
+          )}
+        </div>
+      )}
 
       <div className="quota-card">
         <div>

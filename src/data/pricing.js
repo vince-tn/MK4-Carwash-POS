@@ -213,3 +213,26 @@ export const addOns = [
 ];
 
 export const washers = ["Frank", "John", "Mark", "Angel", "Rico", "Other"];
+
+// Gives every category, package item and add-on a stable id so the
+// Services admin page can edit them. Safe to call on already-tagged data.
+export function ensurePricingIds(pricing) {
+  return {
+    categories: (pricing?.categories || []).map((category) => ({
+      ...category,
+      id: category.id || crypto.randomUUID(),
+      items: (category.items || []).map((item) => ({
+        ...item,
+        id: item.id || crypto.randomUUID(),
+      })),
+    })),
+    addOns: (pricing?.addOns || []).map((addOn) => ({
+      ...addOn,
+      id: addOn.id || crypto.randomUUID(),
+    })),
+  };
+}
+
+export function buildDefaultPricing() {
+  return ensurePricingIds({ categories: pricingData, addOns });
+}

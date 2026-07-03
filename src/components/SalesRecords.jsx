@@ -40,12 +40,6 @@ function sortOrders(orders, sortBy) {
     return sorted.sort((a, b) => Number(a.total || 0) - Number(b.total || 0));
   }
 
-  if (sortBy === "highest_commission") {
-    return sorted.sort(
-      (a, b) => Number(b.commission || 0) - Number(a.commission || 0)
-    );
-  }
-
   if (sortBy === "plate_az") {
     return sorted.sort((a, b) =>
       String(a.plateNumber).localeCompare(String(b.plateNumber))
@@ -522,7 +516,6 @@ export default function SalesRecords({
               <option value="oldest">Oldest first</option>
               <option value="highest_total">Highest total</option>
               <option value="lowest_total">Lowest total</option>
-              <option value="highest_commission">Highest commission</option>
               <option value="plate_az">Plate A-Z</option>
               <option value="worker_az">Worker A-Z</option>
             </select>
@@ -619,7 +612,6 @@ export default function SalesRecords({
               <th>Total</th>
               <th>Paid</th>
               <th>Balance</th>
-              <th>Commission</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -627,7 +619,7 @@ export default function SalesRecords({
           <tbody>
             {filteredAndSortedOrders.length === 0 ? (
               <tr>
-                <td colSpan="12" className="empty">
+                <td colSpan="11" className="empty">
                   No records found.
                 </td>
               </tr>
@@ -703,12 +695,6 @@ export default function SalesRecords({
                     }
                   >
                     {peso.format(order.balance)}
-                  </td>
-
-                  <td>
-                    {peso.format(order.commission)}
-                    <br />
-                    <small>{order.commissionLabel}</small>
                   </td>
 
                   <td>

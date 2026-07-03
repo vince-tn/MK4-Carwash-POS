@@ -1,22 +1,21 @@
 import { useMemo, useState } from "react";
-import { addOns, pricingData } from "../data/pricing";
 
 const peso = new Intl.NumberFormat("en-PH", {
   style: "currency",
   currency: "PHP",
 });
 
-function createBlankService() {
+function createBlankService(pricingData) {
   const firstCategory = pricingData[0];
-  const firstItem = firstCategory.items[0];
+  const firstItem = firstCategory?.items?.[0];
 
   return {
     id: crypto.randomUUID(),
-    category: firstCategory.category,
-    size: firstItem.size,
-    price: firstItem.price,
-    commissionType: firstCategory.commissionType,
-    commissionRate: firstCategory.commissionRate,
+    category: firstCategory?.category || "",
+    size: firstItem?.size || "",
+    price: firstItem?.price || 0,
+    commissionType: firstCategory?.commissionType || "",
+    commissionRate: firstCategory?.commissionRate || 0,
   };
 }
 
@@ -86,6 +85,8 @@ export default function WorkerForm({
   orders,
   workers,
   commissionSettings,
+  pricingData,
+  addOns,
 }) {
   const today = new Date().toISOString().split("T")[0];
   const activeWorkers = workers.filter((worker) => worker.status === "Active");
@@ -98,7 +99,7 @@ export default function WorkerForm({
     carType: "Medium",
     workerId: activeWorkers[0]?.id || "",
     manager: "",
-    services: [createBlankService()],
+    services: [createBlankService(pricingData)],
     selectedAddOns: [],
     paymentEnabled: {
       cash: false,
@@ -127,9 +128,9 @@ export default function WorkerForm({
   const addOnTotal = useMemo(() => {
     return form.selectedAddOns.reduce((sum, addOnName) => {
       const addOn = addOns.find((item) => item.name === addOnName);
-      return sum + (addOn?.price || 0);
+      return sum + (Number(addOn?.price) || 0);
     }, 0);
-  }, [form.selectedAddOns]);
+  }, [form.selectedAddOns, addOns]);
 
   const discount = form.paymentEnabled.discount ? Number(form.discount) || 0 : 0;
   const total = Math.max(serviceTotal + addOnTotal - discount, 0);
@@ -172,7 +173,7 @@ export default function WorkerForm({
   function addService() {
     setForm((prev) => ({
       ...prev,
-      services: [...prev.services, createBlankService()],
+      services: [...prev.services, createBlankService(pricingData)],
     }));
   }
 
@@ -193,13 +194,15 @@ export default function WorkerForm({
 
         if (field === "category") {
           const categoryData = pricingData.find((item) => item.category === value);
+          if (!categoryData) return service;
+
           const firstItem = categoryData.items[0];
 
           return {
             ...service,
             category: value,
-            size: firstItem.size,
-            price: firstItem.price,
+            size: firstItem?.size || "",
+            price: firstItem?.price || 0,
             commissionType: categoryData.commissionType,
             commissionRate: categoryData.commissionRate,
           };
@@ -209,14 +212,14 @@ export default function WorkerForm({
           const categoryData = pricingData.find(
             (item) => item.category === service.category
           );
-          const selectedItem = categoryData.items.find(
+          const selectedItem = categoryData?.items.find(
             (item) => item.size === value
           );
 
           return {
             ...service,
             size: value,
-            price: selectedItem.price,
+            price: selectedItem?.price ?? service.price,
           };
         }
 
@@ -255,7 +258,7 @@ export default function WorkerForm({
       carType: "Medium",
       workerId: activeWorkers[0]?.id || "",
       manager: "",
-      services: [createBlankService()],
+      services: [createBlankService(pricingData)],
       selectedAddOns: [],
       paymentEnabled: {
         cash: false,
@@ -447,6 +450,9 @@ export default function WorkerForm({
                           updateService(service.id, "category", e.target.value)
                         }
                       >
+                        {!selectedCategory && service.category && (
+                          <option>{service.category}</option>
+                        )}
                         {pricingData.map((item) => (
                           <option key={item.category}>{item.category}</option>
                         ))}
@@ -461,7 +467,10 @@ export default function WorkerForm({
                           updateService(service.id, "size", e.target.value)
                         }
                       >
-                        {selectedCategory.items.map((item) => (
+                        {!selectedCategory && service.size && (
+                          <option>{service.size}</option>
+                        )}
+                        {(selectedCategory?.items || []).map((item) => (
                           <option key={item.size}>{item.size}</option>
                         ))}
                       </select>
@@ -469,7 +478,10 @@ export default function WorkerForm({
 
                     <label>
                       Price
-                      <input value={peso.format(service.price)} disabled />
+                      <input
+                        value={peso.format(Number(service.price) || 0)}
+                        disabled
+                      />
                     </label>
 
                     <label>
@@ -504,7 +516,7 @@ export default function WorkerForm({
                   onClick={() => toggleAddOn(addOn.name)}
                 >
                   {addOn.name}
-                  <span>{peso.format(addOn.price)}</span>
+                  <span>{peso.format(Number(addOn.price) || 0)}</span>
                 </button>
               ))}
             </div>
@@ -649,10 +661,6 @@ export default function WorkerForm({
               {peso.format(balance)}
             </strong>
           </div>
-          <div>
-            <span>Commission</span>
-            <strong>{peso.format(commission)}</strong>
-          </div>
         </div>
 
         <button className="submit-btn" type="submit">
@@ -690,7 +698,7 @@ export default function WorkerForm({
               <span>
                 {service.category} - {service.size}
               </span>
-              <strong>{peso.format(service.price)}</strong>
+              <strong>{peso.format(Number(service.price) || 0)}</strong>
             </div>
           ))}
         </div>

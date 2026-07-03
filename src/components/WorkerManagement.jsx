@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import WorkerReports from "./WorkerReports";
 
 const peso = new Intl.NumberFormat("en-PH", {
   style: "currency",
@@ -267,6 +268,17 @@ export default function WorkerManagement({
             </p>
           </div>
         </div>
+      </div>
+
+      <div className="form-card">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">Worker Reports</span>
+            <h2>Performance per Day, Week and Month</h2>
+          </div>
+        </div>
+
+        <WorkerReports orders={orders} workers={workers} />
       </div>
 
       <div className="worker-list">
