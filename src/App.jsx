@@ -5,6 +5,7 @@ import {
   Droplets,
   LayoutDashboard,
   UsersRound,
+  LogIn,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
@@ -206,6 +207,11 @@ export default function App() {
       if (isMounted) {
         setSession(data.session);
         setAuthChecked(true);
+
+        // If a session is restored while sitting on the Login page, move on
+        if (data.session) {
+          setActivePage((prev) => (prev === "login" ? "dashboard" : prev));
+        }
       }
     }
 
@@ -216,6 +222,10 @@ export default function App() {
     } = supabase.auth.onAuthStateChange((_event, currentSession) => {
       setSession(currentSession);
       setAuthChecked(true);
+
+      if (currentSession) {
+        setActivePage((prev) => (prev === "login" ? "dashboard" : prev));
+      }
     });
 
     return () => {
@@ -362,41 +372,54 @@ export default function App() {
             <span className="nav-label">Worker Form</span>
           </button>
 
-          <button
-            className={activePage === "dashboard" ? "active" : ""}
-            onClick={() => goToPage("dashboard")}
-            title="Admin Dashboard"
-          >
-            <LayoutDashboard size={18} />
-            <span className="nav-label">Admin Dashboard</span>
-          </button>
+          {isLoggedIn ? (
+            <>
+              <button
+                className={activePage === "dashboard" ? "active" : ""}
+                onClick={() => goToPage("dashboard")}
+                title="Admin Dashboard"
+              >
+                <LayoutDashboard size={18} />
+                <span className="nav-label">Admin Dashboard</span>
+              </button>
 
-          <button
-            className={activePage === "records" ? "active" : ""}
-            onClick={() => goToPage("records")}
-            title="Sales Records"
-          >
-            <BarChart3 size={18} />
-            <span className="nav-label">Sales Records</span>
-          </button>
+              <button
+                className={activePage === "records" ? "active" : ""}
+                onClick={() => goToPage("records")}
+                title="Sales Records"
+              >
+                <BarChart3 size={18} />
+                <span className="nav-label">Sales Records</span>
+              </button>
 
-          <button
-            className={activePage === "workers" ? "active" : ""}
-            onClick={() => goToPage("workers")}
-            title="Workers"
-          >
-            <UsersRound size={18} />
-            <span className="nav-label">Workers</span>
-          </button>
+              <button
+                className={activePage === "workers" ? "active" : ""}
+                onClick={() => goToPage("workers")}
+                title="Workers"
+              >
+                <UsersRound size={18} />
+                <span className="nav-label">Workers</span>
+              </button>
 
-          <button
-            className={activePage === "services" ? "active" : ""}
-            onClick={() => goToPage("services")}
-            title="Services"
-          >
-            <Droplets size={18} />
-            <span className="nav-label">Services</span>
-          </button>
+              <button
+                className={activePage === "services" ? "active" : ""}
+                onClick={() => goToPage("services")}
+                title="Services"
+              >
+                <Droplets size={18} />
+                <span className="nav-label">Services</span>
+              </button>
+            </>
+          ) : (
+            <button
+              className={activePage === "login" ? "active" : ""}
+              onClick={() => goToPage("login")}
+              title="Login"
+            >
+              <LogIn size={18} />
+              <span className="nav-label">Login</span>
+            </button>
+          )}
         </nav>
 
         {isLoggedIn && (
@@ -425,6 +448,7 @@ export default function App() {
               {activePage === "records" && "Sales Order Records"}
               {activePage === "workers" && "Workers and Commission"}
               {activePage === "services" && "Services and Pricing"}
+              {activePage === "login" && "Admin Login"}
             </h2>
           </div>
         </header>
@@ -437,6 +461,21 @@ export default function App() {
 
         {authChecked && needsAuth && !isLoggedIn && (
           <AuthPage onLoginSuccess={(newSession) => setSession(newSession)} />
+        )}
+
+        {activePage === "login" && !isLoggedIn && authChecked && (
+          <AuthPage
+            onLoginSuccess={(newSession) => {
+              setSession(newSession);
+              setActivePage("dashboard");
+            }}
+          />
+        )}
+
+        {activePage === "login" && !authChecked && (
+          <div className="form-card">
+            <h2>Checking admin access...</h2>
+          </div>
         )}
 
         {activePage === "form" && (
