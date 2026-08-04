@@ -1,0 +1,74 @@
+name: Supabase Keep-Alive
+
+# Supabase pauses free-tier projects after 7 days of inactivity.
+# This pings the project daily so it never reaches that threshold.
+# GitHub's scheduler is best-effort and can be delayed by a while, so daily
+# (rather than weekly) leaves plenty of margin.
+#
+# Requires:
+#   - supabase/keep_alive.sql applied once to the project
+#   - repo secrets SUPABASE_URL and SUPABASE_ANON_KEY
+
+on:
+  schedule:
+    # 06:23 UTC daily. Off-the-hour minutes get queued less than :00.
+    - cron: "23 6 * * *"
+  workflow_dispatch: # lets you run it by hand from the Actions tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+    steps:
+      - name: Check secrets are configured
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_ANON_KEY:-}" ]; then
+            echo "::error::Repo secrets SUPABASE_URL and SUPABASE_ANON_KEY must both be set."
+            exit 1
+          fi
+
+      - name: Read from the database
+        run: |
+          set -euo pipefail
+
+          # A real SELECT against public.keep_alive. A 200 here proves Postgres
+          # itself answered, not just the edge — that is what counts as activity.
+          code=$(curl -sS \
+            --retry 3 --retry-delay 15 --retry-all-errors \
+            --max-time 30 \
+            -o response.json -w "%{http_code}" \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            "${SUPABASE_URL}/rest/v1/keep_alive?select=id,created_at&limit=1")
+
+          echo "Database responded: HTTP ${code}"
+          if [ "${code}" != "200" ]; then
+            echo "Response body:"
+            cat response.json
+            echo
+            echo "::error::Expected HTTP 200 from the keep_alive read, got ${code}. If this is 404, apply supabase/keep_alive.sql to the project."
+            exit 1
+          fi
+          cat response.json
+
+      - name: Check Auth is up
+        run: |
+          set -euo pipefail
+
+          # The app signs in through GoTrue, so verify that service too.
+          code=$(curl -sS \
+            --retry 3 --retry-delay 15 --retry-all-errors \
+            --max-time 30 \
+            -o /dev/null -w "%{http_code}" \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            "${SUPABASE_URL}/auth/v1/health")
+
+          echo "Auth responded: HTTP ${code}"
+          if [ "${code}" != "200" ]; then
+            echo "::error::Expected HTTP 200 from Auth, got ${code}."
+            exit 1
+          fi
