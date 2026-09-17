@@ -397,7 +397,7 @@ export default function SalesRecords({
       "Contact Number",
       "Car Type",
       "Worker",
-      "Manager",
+      "Staff on Duty",
       "Services",
       "Add-ons",
       "Service Total",

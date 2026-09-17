@@ -407,10 +407,10 @@ export default function WorkerForm({
             </label>
 
             <label>
-              Manager on Duty
+              Staff on Duty
               <input
                 type="text"
-                placeholder="Manager name"
+                placeholder="Staff name"
                 value={form.manager}
                 onChange={(e) => updateField("manager", e.target.value)}
               />
