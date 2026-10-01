@@ -20,7 +20,21 @@ create policy "Authenticated can delete workers"
   on public.workers for delete to authenticated using (true);
 
 ------------------------------------------------------------------------------
--- 2. Remove the rows my end-to-end test created
+-- 2. Let staff remove a proof image
+--
+-- payment_proofs.sql granted insert and select but not delete, and the
+-- storage API reports a blocked delete as success having removed nothing.
+-- Without this there is no way to clear old proofs, and the 1 GB storage
+-- quota can only ever fill up.
+------------------------------------------------------------------------------
+
+drop policy if exists "staff can delete payment proofs" on storage.objects;
+create policy "staff can delete payment proofs"
+  on storage.objects for delete to authenticated
+  using (bucket_id = 'payment-proofs');
+
+------------------------------------------------------------------------------
+-- 3. Remove the rows my end-to-end test created
 --
 -- One order (with its service and add-on rows, removed by cascade) and one
 -- worker that could not be deleted before the policy above existed.
