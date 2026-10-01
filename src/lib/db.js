@@ -358,11 +358,31 @@ export async function fetchPricing() {
 }
 
 /*
- * The Services page hands back the whole price list on every edit, so this
- * replaces the stored list wholesale: upsert what is there now, then remove
- * whatever is no longer referenced. Callers debounce it.
+ * Collects every row id in a price list, so a later save can tell what the
+ * user actually removed.
  */
-export async function savePricing(pricing) {
+export function collectPricingIds(pricing) {
+  const categories = (pricing?.categories || []).map((category) => category.id);
+
+  const items = (pricing?.categories || []).flatMap((category) =>
+    (category.items || []).map((item) => item.id)
+  );
+
+  const addOns = (pricing?.addOns || []).map((addOn) => addOn.id);
+
+  return { categories, items, addOns };
+}
+
+/*
+ * The Services page hands back the whole price list on every edit, so this
+ * upserts everything in it, then removes the rows the user deleted.
+ *
+ * `previous` is the id set from the last known-good save or load. Deletions
+ * are worked out against it rather than against "anything not in this list",
+ * because the latter means a stale or half-built price list silently wipes
+ * the real one. Callers debounce this.
+ */
+export async function savePricing(pricing, previous) {
   const categories = pricing.categories || [];
   const addOns = pricing.addOns || [];
 
@@ -408,20 +428,24 @@ export async function savePricing(pricing) {
     if (error) throw error;
   }
 
+  // Nothing to reconcile on a first write: there is no previous list, so
+  // there is nothing the user can have removed.
+  if (!previous) return;
+
   await Promise.all([
-    deleteMissing("service_categories", categoryRows.map((row) => row.id)),
-    deleteMissing("service_items", itemRows.map((row) => row.id)),
-    deleteMissing("add_ons", addOnRows.map((row) => row.id)),
+    deleteRemoved("service_categories", previous.categories, categoryRows),
+    deleteRemoved("service_items", previous.items, itemRows),
+    deleteRemoved("add_ons", previous.addOns, addOnRows),
   ]);
 }
 
-async function deleteMissing(table, keepIds) {
-  const query = supabase.from(table).delete();
+async function deleteRemoved(table, previousIds, currentRows) {
+  const current = new Set(currentRows.map((row) => row.id));
+  const removed = (previousIds || []).filter((id) => !current.has(id));
 
-  const { error } = keepIds.length
-    ? await query.not("id", "in", `(${keepIds.join(",")})`)
-    : await query.gte("created_at", "1970-01-01");
+  if (!removed.length) return;
 
+  const { error } = await supabase.from(table).delete().in("id", removed);
   if (error) throw error;
 }
 
@@ -437,7 +461,7 @@ export async function isPricingEmpty() {
 }
 
 export async function seedPricing(defaultPricing) {
-  await savePricing(defaultPricing);
+  await savePricing(defaultPricing, null);
 }
 
 /*

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BarChart3,
   ClipboardList,
@@ -48,6 +48,14 @@ export default function App() {
   );
   const [pricing, setPricing] = useState({ categories: [], addOns: [] });
 
+  // Strict Mode runs effects twice in development, and the second run would
+  // seed a second price list with freshly generated ids. Load once per session.
+  const loadedForSession = useRef(null);
+
+  // The id set that is currently stored, so a save can tell a real deletion
+  // from a price list that simply has not finished loading.
+  const savedPricingIds = useRef(null);
+
   // idle (signed out) | loading | ready | error
   const [dataState, setDataState] = useState("idle");
   const [dataError, setDataError] = useState("");
@@ -60,6 +68,10 @@ export default function App() {
     // Signed out: nothing to load. State is cleared on logout instead, so
     // this effect never sets state synchronously.
     if (!session) return undefined;
+
+    // Guards against Strict Mode's double invocation seeding twice.
+    if (loadedForSession.current === session.user.id) return undefined;
+    loadedForSession.current = session.user.id;
 
     let cancelled = false;
 
@@ -88,6 +100,7 @@ export default function App() {
         setWorkers(nextWorkers);
         setCommissionSettings(nextCommission);
         setPricing(nextPricing);
+        savedPricingIds.current = db.collectPricingIds(nextPricing);
         setDataState("ready");
         setImportOffer(!nextWorkers.length && db.hasLocalData(LOCAL_KEYS));
       } catch (error) {
@@ -110,9 +123,14 @@ export default function App() {
     if (!session || dataState !== "ready") return undefined;
 
     const timer = setTimeout(() => {
-      db.savePricing(pricing).catch((error) => {
-        console.error("Could not save the price list", error);
-      });
+      db
+        .savePricing(pricing, savedPricingIds.current)
+        .then(() => {
+          savedPricingIds.current = db.collectPricingIds(pricing);
+        })
+        .catch((error) => {
+          console.error("Could not save the price list", error);
+        });
     }, 800);
 
     return () => clearTimeout(timer);
@@ -317,6 +335,8 @@ export default function App() {
     setWorkers([]);
     setDataState("idle");
     setImportOffer(false);
+    loadedForSession.current = null;
+    savedPricingIds.current = null;
   }
 
   function goToPage(page) {
