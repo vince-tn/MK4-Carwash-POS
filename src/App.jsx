@@ -29,6 +29,27 @@ const LOCAL_KEYS = {
 };
 
 
+// Starter profiles for a brand new shop. Deliberately minimal: the roles are
+// a guess and the shop is expected to delete these once its own staff are in.
+const INITIAL_WORKERS = [
+  {
+    name: "Millet",
+    role: "Manager",
+    status: "Active",
+    commissionMode: "inherit",
+    commissionValue: 0,
+    notes: "Starter profile. Replace with the shop's own staff.",
+  },
+  {
+    name: "Angelica",
+    role: "Washer",
+    status: "Active",
+    commissionMode: "inherit",
+    commissionValue: 0,
+    notes: "Starter profile. Replace with the shop's own staff.",
+  },
+];
+
 const defaultCommissionSettings = {
   globalMode: "service_percent",
   globalValue: "100",
@@ -86,6 +107,8 @@ export default function App() {
         if (await db.isPricingEmpty()) {
           await db.seedPricing(buildDefaultPricing());
         }
+
+        await db.seedWorkers(INITIAL_WORKERS);
 
         const [nextOrders, nextWorkers, nextCommission, nextPricing] =
           await Promise.all([
@@ -509,6 +532,13 @@ export default function App() {
 
         {activePage === "form" && (
           <WorkerForm
+            /*
+             * The form builds its first blank service row from the price list,
+             * which now arrives asynchronously. Keying on whether that list
+             * has loaded remounts the form once it does, so Package / Size is
+             * never left empty because the data was a moment late.
+             */
+            key={pricing.categories.length ? "priced" : "empty"}
             onAddOrder={addOrder}
             orders={orders}
             workers={workers}

@@ -498,6 +498,32 @@ export async function isPricingEmpty() {
  * call to buildDefaultPricing() mints new ids and nothing matched them up.
  * Matching on name instead makes a repeat seed a no-op.
  */
+/*
+ * Puts a couple of starter profiles in place so a brand new shop is not
+ * staring at an empty worker dropdown on its first sale.
+ *
+ * Only ever runs on an untouched project. Once a single order exists, an
+ * empty worker list is a deliberate choice -- the shop deleting the starters
+ * after entering its own staff -- and must be left alone.
+ */
+export async function seedWorkers(initialWorkers) {
+  const [workerCount, orderCount] = await Promise.all([
+    supabase.from("workers").select("id", { count: "exact", head: true }),
+    supabase.from("orders").select("id", { count: "exact", head: true }),
+  ]);
+
+  if (workerCount.error) throw workerCount.error;
+  if (orderCount.error) throw orderCount.error;
+
+  if ((workerCount.count || 0) > 0 || (orderCount.count || 0) > 0) return;
+
+  const { error } = await supabase
+    .from("workers")
+    .insert(initialWorkers.map(toWorkerRow));
+
+  if (error) throw error;
+}
+
 export async function seedPricing(defaultPricing) {
   const [existingCategories, existingAddOns] = await Promise.all([
     supabase.from("service_categories").select("id, category"),
