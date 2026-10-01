@@ -323,6 +323,7 @@ export default function SalesRecords({
   orders,
   workers,
   onUpdateOrderPayment,
+  onDeleteOrder,
 }) {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("newest");
@@ -766,12 +767,24 @@ export default function SalesRecords({
                   <td>
                     <button
                       className="table-action-btn"
+                      title="Edit payment"
                       onClick={(e) => {
                         e.stopPropagation();
                         setEditingPaymentOrder(order);
                       }}
                     >
                       🖍
+                    </button>
+
+                    <button
+                      className="table-action-btn danger"
+                      title="Delete this sale"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteOrder(order.id);
+                      }}
+                    >
+                      🗑
                     </button>
                   </td>
                 </tr>

@@ -1585,3 +1585,64 @@ td {
   opacity: 0.6;
   cursor: default;
 }
+
+/* --- Confirmation modal for deletions --- */
+
+.confirm-card {
+  width: min(460px, 100%);
+  background: white;
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
+}
+
+.confirm-card h2 {
+  margin: 0 0 10px;
+  font-size: 1.15rem;
+}
+
+.confirm-message {
+  margin: 0 0 14px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #374151;
+}
+
+.confirm-details {
+  margin: 0 0 14px;
+  padding: 12px 14px 12px 30px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  font-size: 0.86rem;
+  color: #7f1d1d;
+}
+
+.confirm-details li {
+  margin: 3px 0;
+}
+
+.confirm-warning {
+  margin: 0 0 18px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #b91c1c;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.table-action-btn + .table-action-btn {
+  margin-left: 6px;
+}
+
+.table-action-btn.danger {
+  background: #b91c1c;
+}
+
+.table-action-btn.danger:hover {
+  background: #7f1d1d;
+}

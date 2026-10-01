@@ -18,6 +18,7 @@ import ServicesManagement from "./components/ServicesManagement";
 import logo from "./assets/logo.png";
 import { supabase } from "./lib/supabaseClient";
 import AuthPage from "./components/AuthPage";
+import ConfirmModal from "./components/ConfirmModal";
 import { buildDefaultPricing } from "./data/pricing";
 import * as db from "./lib/db";
 
@@ -49,6 +50,11 @@ const INITIAL_WORKERS = [
     notes: "Starter profile. Replace with the shop's own staff.",
   },
 ];
+
+const peso = new Intl.NumberFormat("en-PH", {
+  style: "currency",
+  currency: "PHP",
+});
 
 const defaultCommissionSettings = {
   globalMode: "service_percent",
@@ -82,6 +88,8 @@ export default function App() {
   const [dataError, setDataError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [importOffer, setImportOffer] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [importing, setImporting] = useState(false);
 
   // The worker form is public, so the staff list, price list and commission
@@ -324,25 +332,86 @@ export default function App() {
     }
   }
 
-  async function deleteWorker(workerId) {
-    const hasOrders = orders.some((order) => order.workerId === workerId);
+  function deleteWorker(workerId) {
+    const worker = workers.find((item) => item.id === workerId);
+    if (!worker) return;
 
-    if (hasOrders) {
-      alert(
-        "This worker already has sales records. Set their status to Inactive instead of deleting them."
-      );
-      return;
-    }
+    // The foreign key cascades, so the worker's sales go too. Put the count
+    // and the value on screen rather than asking them to take it on trust.
+    const theirOrders = orders.filter((order) => order.workerId === workerId);
+    const takings = theirOrders.reduce(
+      (sum, order) => sum + Number(order.total || 0),
+      0
+    );
 
-    const confirmDelete = confirm("Delete this worker profile?");
-    if (!confirmDelete) return;
+    setPendingDelete({
+      kind: "worker",
+      id: workerId,
+      title: `Delete ${worker.name}?`,
+      message: theirOrders.length
+        ? `${worker.name} has sales recorded against them. Deleting this profile deletes those sales as well, and your totals for those days will change.`
+        : `${worker.name} has no sales recorded. Deleting the profile removes nothing else.`,
+      details: theirOrders.length
+        ? [
+            `${theirOrders.length} sales order(s) will be deleted`,
+            `${peso.format(takings)} of recorded sales will be removed`,
+            "To keep the history instead, cancel and set them to Inactive",
+          ]
+        : [],
+      confirmLabel: "Delete worker",
+    });
+  }
+
+  function deleteOrder(orderId) {
+    const order = orders.find((item) => item.id === orderId);
+    if (!order) return;
+
+    setPendingDelete({
+      kind: "order",
+      id: orderId,
+      title: `Delete ${order.id}?`,
+      message:
+        "This removes the sale from the records and from every report and total.",
+      details: [
+        `${order.plateNumber || "No plate"} on ${order.date}`,
+        `${peso.format(Number(order.total || 0))} total, ${peso.format(
+          Number(order.totalPaid || 0)
+        )} paid`,
+        order.washerName ? `Recorded by ${order.washerName}` : null,
+      ].filter(Boolean),
+      confirmLabel: "Delete sale",
+    });
+  }
+
+  async function confirmPendingDelete() {
+    if (!pendingDelete) return;
+
+    setIsDeleting(true);
 
     try {
-      await db.deleteWorker(workerId);
-      setWorkers((prev) => prev.filter((worker) => worker.id !== workerId));
+      if (pendingDelete.kind === "worker") {
+        await db.deleteWorker(pendingDelete.id);
+        setWorkers((prev) =>
+          prev.filter((worker) => worker.id !== pendingDelete.id)
+        );
+        // Their sales went with them in the database; mirror that here.
+        setOrders((prev) =>
+          prev.filter((order) => order.workerId !== pendingDelete.id)
+        );
+      } else {
+        const order = orders.find((item) => item.id === pendingDelete.id);
+        await db.deleteOrder(order.dbId);
+        setOrders((prev) =>
+          prev.filter((item) => item.id !== pendingDelete.id)
+        );
+      }
+
+      setPendingDelete(null);
     } catch (error) {
-      console.error("Could not delete the worker", error);
-      alert(`Could not delete the worker: ${error.message}`);
+      console.error("Could not complete the delete", error);
+      alert(`Could not delete that: ${error.message}`);
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -380,6 +449,18 @@ export default function App() {
         <div className="data-banner is-error">
           Could not reach the database: {dataError}
         </div>
+      )}
+
+      {pendingDelete && (
+        <ConfirmModal
+          title={pendingDelete.title}
+          message={pendingDelete.message}
+          details={pendingDelete.details}
+          confirmLabel={pendingDelete.confirmLabel}
+          isBusy={isDeleting}
+          onConfirm={confirmPendingDelete}
+          onClose={() => setPendingDelete(null)}
+        />
       )}
 
       {saveError && <div className="data-banner is-error">{saveError}</div>}
@@ -555,6 +636,7 @@ export default function App() {
             orders={orders}
             workers={workers}
             onUpdateOrderPayment={updateOrderPayment}
+            onDeleteOrder={deleteOrder}
           />
         )}
 

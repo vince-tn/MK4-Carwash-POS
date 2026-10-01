@@ -222,6 +222,27 @@ export async function updateOrderPayment(dbId, patch) {
   return toAppOrder(data);
 }
 
+export async function deleteOrder(dbId) {
+  // Child service and add-on rows go with it via ON DELETE CASCADE.
+  //
+  // Checked the same way as deleteWorker: a delete with no matching policy
+  // is reported as success affecting nothing, which would quietly drop the
+  // row from the screen and bring it back on the next load.
+  const { data, error } = await supabase
+    .from("orders")
+    .delete()
+    .eq("id", dbId)
+    .select("id");
+
+  if (error) throw error;
+
+  if (!data || !data.length) {
+    throw new Error(
+      "The database refused that delete. A delete policy on the orders table is missing."
+    );
+  }
+}
+
 /* ----------------------------------------------------------------- workers */
 
 function toAppWorker(row) {
