@@ -530,7 +530,7 @@ export default function App() {
           </div>
         )}
 
-        {activePage === "form" && (
+        {authChecked && isLoggedIn && activePage === "form" && (
           <WorkerForm
             /*
              * The form builds its first blank service row from the price list,
