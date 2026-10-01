@@ -59,6 +59,7 @@ export default function App() {
   // idle (signed out) | loading | ready | error
   const [dataState, setDataState] = useState("idle");
   const [dataError, setDataError] = useState("");
+  const [saveError, setSaveError] = useState("");
   const [importOffer, setImportOffer] = useState(false);
   const [importing, setImporting] = useState(false);
 
@@ -127,9 +128,11 @@ export default function App() {
         .savePricing(pricing, savedPricingIds.current)
         .then(() => {
           savedPricingIds.current = db.collectPricingIds(pricing);
+          setSaveError("");
         })
         .catch((error) => {
           console.error("Could not save the price list", error);
+          setSaveError(`Price list not saved: ${error.message}`);
         });
     }, 800);
 
@@ -140,9 +143,13 @@ export default function App() {
     if (!session || dataState !== "ready") return undefined;
 
     const timer = setTimeout(() => {
-      db.saveCommissionSettings(commissionSettings).catch((error) => {
-        console.error("Could not save commission settings", error);
-      });
+      db
+        .saveCommissionSettings(commissionSettings)
+        .then(() => setSaveError(""))
+        .catch((error) => {
+          console.error("Could not save commission settings", error);
+          setSaveError(`Commission settings not saved: ${error.message}`);
+        });
     }, 800);
 
     return () => clearTimeout(timer);
@@ -353,6 +360,8 @@ export default function App() {
           Could not reach the database: {dataError}
         </div>
       )}
+
+      {saveError && <div className="data-banner is-error">{saveError}</div>}
 
       {importOffer && (
         <div className="data-banner is-action">

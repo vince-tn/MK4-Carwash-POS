@@ -81,13 +81,28 @@ function toAppOrder(row) {
 }
 
 export async function fetchOrders() {
-  const { data, error } = await supabase
-    .from("orders")
-    .select(ORDER_SELECT)
-    .order("created_at", { ascending: false });
+  // PostgREST caps a response at 1000 rows and does so silently, so a single
+  // select would quietly start dropping orders about three weeks into
+  // trading and every report would be wrong without saying so. Page until a
+  // short page comes back.
+  const PAGE_SIZE = 1000;
+  const rows = [];
 
-  if (error) throw error;
-  return (data || []).map(toAppOrder);
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("orders")
+      .select(ORDER_SELECT)
+      .order("created_at", { ascending: false })
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) throw error;
+
+    rows.push(...(data || []));
+
+    if (!data || data.length < PAGE_SIZE) break;
+  }
+
+  return rows.map(toAppOrder);
 }
 
 export async function createOrder(order) {
@@ -269,8 +284,23 @@ export async function updateWorker(workerId, worker) {
 
 export async function deleteWorker(workerId) {
   // Orders keep worker_name, so history survives a worker being removed.
-  const { error } = await supabase.from("workers").delete().eq("id", workerId);
+  //
+  // RLS reports success with zero rows affected when no policy grants the
+  // delete, so the result has to be inspected. Otherwise the worker vanishes
+  // from the screen and is back on the next reload.
+  const { data, error } = await supabase
+    .from("workers")
+    .delete()
+    .eq("id", workerId)
+    .select("id");
+
   if (error) throw error;
+
+  if (!data || !data.length) {
+    throw new Error(
+      "The database refused that delete. A delete policy on the workers table is missing."
+    );
+  }
 }
 
 /* ----------------------------------------------------- commission settings */
@@ -460,14 +490,88 @@ export async function isPricingEmpty() {
   return (count || 0) === 0;
 }
 
+/*
+ * Seeds only what is genuinely missing, matched on name.
+ *
+ * This has to be safe to run twice: a reload while the first seed was still
+ * in flight used to leave two full copies of the price list, because every
+ * call to buildDefaultPricing() mints new ids and nothing matched them up.
+ * Matching on name instead makes a repeat seed a no-op.
+ */
 export async function seedPricing(defaultPricing) {
-  await savePricing(defaultPricing, null);
+  const [existingCategories, existingAddOns] = await Promise.all([
+    supabase.from("service_categories").select("id, category"),
+    supabase.from("add_ons").select("id, name"),
+  ]);
+
+  if (existingCategories.error) throw existingCategories.error;
+  if (existingAddOns.error) throw existingAddOns.error;
+
+  const haveCategory = new Set(
+    (existingCategories.data || []).map((row) => row.category)
+  );
+  const haveAddOn = new Set((existingAddOns.data || []).map((row) => row.name));
+
+  const newCategories = (defaultPricing.categories || []).filter(
+    (category) => !haveCategory.has(category.category)
+  );
+
+  const newAddOns = (defaultPricing.addOns || []).filter(
+    (addOn) => !haveAddOn.has(addOn.name)
+  );
+
+  if (newCategories.length) {
+    const { error } = await supabase.from("service_categories").insert(
+      newCategories.map((category, index) => ({
+        id: category.id,
+        category: category.category,
+        commission_type: category.commissionType || null,
+        commission_rate: num(category.commissionRate),
+        sort_order: index,
+      }))
+    );
+    if (error) throw error;
+
+    const itemRows = newCategories.flatMap((category) =>
+      (category.items || []).map((item, index) => ({
+        id: item.id,
+        category_id: category.id,
+        size: item.size || "",
+        price: num(item.price),
+        sort_order: index,
+      }))
+    );
+
+    if (itemRows.length) {
+      const { error: itemError } = await supabase
+        .from("service_items")
+        .insert(itemRows);
+      if (itemError) throw itemError;
+    }
+  }
+
+  if (newAddOns.length) {
+    const { error } = await supabase.from("add_ons").insert(
+      newAddOns.map((addOn, index) => ({
+        id: addOn.id,
+        name: addOn.name,
+        price: num(addOn.price),
+        sort_order: index,
+      }))
+    );
+    if (error) throw error;
+  }
 }
 
+const IMPORT_DONE_KEY = "mk4-auto-care-imported-at";
+
 /*
- * One-time move of whatever a device still holds in localStorage. Orders are
- * imported first so nothing is lost, then the local copy is cleared so the
- * database is the only source of truth from then on.
+ * Copies whatever a device still holds in localStorage into the database.
+ *
+ * The local copy is deliberately left in place: for records created before
+ * the database existed it is the only backup there is, and a partly-finished
+ * import must not be able to destroy it. A marker suppresses the banner
+ * instead, so the import cannot be run twice by accident.
  */
 export async function importLocalStorage(keys) {
   const summary = { workers: 0, orders: 0 };
@@ -491,8 +595,7 @@ export async function importLocalStorage(keys) {
     summary.orders += 1;
   }
 
-  localStorage.removeItem(keys.workers);
-  localStorage.removeItem(keys.orders);
+  localStorage.setItem(IMPORT_DONE_KEY, new Date().toISOString());
 
   return summary;
 }
@@ -507,5 +610,7 @@ function readJson(key) {
 }
 
 export function hasLocalData(keys) {
+  if (localStorage.getItem(IMPORT_DONE_KEY)) return false;
+
   return readJson(keys.workers).length > 0 || readJson(keys.orders).length > 0;
 }
