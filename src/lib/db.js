@@ -114,9 +114,16 @@ export async function createOrder(order) {
       ? order.workerId
       : null;
 
-  const { data, error } = await supabase
+  // Minted here rather than by the database: a signed-out worker has insert
+  // but no select on orders, and PostgREST's insert().select() needs a select
+  // policy. Knowing the id up front also lets the child rows be written
+  // without reading anything back.
+  const id = crypto.randomUUID();
+
+  const { error } = await supabase
     .from("orders")
     .insert({
+      id,
       sales_order_id: order.id,
       order_date: order.date,
       plate_number: order.plateNumber,
@@ -144,22 +151,19 @@ export async function createOrder(order) {
       photo_name: order.photoName || null,
       photo_path: order.photoPath || null,
       notes: order.notes || null,
-    })
-    .select("id")
-    .single();
+    });
 
   if (error) throw error;
 
-  await insertOrderChildren(data.id, order);
+  await insertOrderChildren(id, order);
 
-  const { data: full, error: readError } = await supabase
-    .from("orders")
-    .select(ORDER_SELECT)
-    .eq("id", data.id)
-    .single();
+  // Built from what was just written rather than re-read, both because a
+  // signed-out worker may not select from orders and because it saves a
+  // round trip. addOnPrices is a lookup the caller passed in, not a field.
+  const saved = { ...order, dbId: id, createdAt: new Date().toISOString() };
+  delete saved.addOnPrices;
 
-  if (readError) throw readError;
-  return toAppOrder(full);
+  return saved;
 }
 
 async function insertOrderChildren(orderId, order) {

@@ -84,41 +84,43 @@ export default function App() {
   const [importOffer, setImportOffer] = useState(false);
   const [importing, setImporting] = useState(false);
 
-  // Every table is readable only by signed-in staff, so loading waits for the
-  // session rather than running on mount.
+  // The worker form is public, so the staff list, price list and commission
+  // rule load with or without a session. Orders are the one thing that needs
+  // one: a worker can record a sale but not read back the day's takings.
   useEffect(() => {
-    // Signed out: nothing to load. State is cleared on logout instead, so
-    // this effect never sets state synchronously.
-    if (!session) return undefined;
+    const sessionKey = session?.user?.id || "public";
 
     // Guards against Strict Mode's double invocation seeding twice.
-    if (loadedForSession.current === session.user.id) return undefined;
-    loadedForSession.current = session.user.id;
+    if (loadedForSession.current === sessionKey) return undefined;
+    loadedForSession.current = sessionKey;
 
-    let cancelled = false;
-
+    // No cancellation flag here on purpose. Strict Mode tears this effect
+    // down right after its first run, and the ref guard above stops the
+    // second run from starting another load -- so cancelling the first would
+    // leave nothing to finish and the app stuck on "Loading records". A
+    // stray setState after a real unmount is a harmless no-op.
     async function load() {
       setDataState("loading");
       setDataError("");
 
       try {
-        // A brand new project has no price list, so fall back to the bundled
-        // one once rather than leaving the till with nothing to sell.
-        if (await db.isPricingEmpty()) {
-          await db.seedPricing(buildDefaultPricing());
+        // Seeding writes, and only signed-in staff may write to these
+        // tables, so a public visit never attempts it.
+        if (session) {
+          if (await db.isPricingEmpty()) {
+            await db.seedPricing(buildDefaultPricing());
+          }
+
+          await db.seedWorkers(INITIAL_WORKERS);
         }
 
-        await db.seedWorkers(INITIAL_WORKERS);
+        const [nextWorkers, nextCommission, nextPricing] = await Promise.all([
+          db.fetchWorkers(),
+          db.fetchCommissionSettings(),
+          db.fetchPricing(),
+        ]);
 
-        const [nextOrders, nextWorkers, nextCommission, nextPricing] =
-          await Promise.all([
-            db.fetchOrders(),
-            db.fetchWorkers(),
-            db.fetchCommissionSettings(),
-            db.fetchPricing(),
-          ]);
-
-        if (cancelled) return;
+        const nextOrders = session ? await db.fetchOrders() : [];
 
         setOrders(nextOrders);
         setWorkers(nextWorkers);
@@ -126,9 +128,10 @@ export default function App() {
         setPricing(nextPricing);
         savedPricingIds.current = db.collectPricingIds(nextPricing);
         setDataState("ready");
-        setImportOffer(!nextWorkers.length && db.hasLocalData(LOCAL_KEYS));
+        setImportOffer(
+          Boolean(session) && !nextWorkers.length && db.hasLocalData(LOCAL_KEYS)
+        );
       } catch (error) {
-        if (cancelled) return;
         console.error("Could not load data", error);
         setDataError(error.message || "Could not load data.");
         setDataState("error");
@@ -137,9 +140,7 @@ export default function App() {
 
     load();
 
-    return () => {
-      cancelled = true;
-    };
+    return undefined;
   }, [session]);
 
   // The Services page reports every keystroke, so writes are debounced.
@@ -345,13 +346,9 @@ export default function App() {
     }
   }
 
-  const protectedPages = [
-    "form",
-    "dashboard",
-    "records",
-    "workers",
-    "services",
-  ];
+  // The worker form is deliberately public: workers record sales without
+  // signing in. Everything that reads takings or changes settings is not.
+  const protectedPages = ["dashboard", "records", "workers", "services"];
   const needsAuth = protectedPages.includes(activePage);
   const isLoggedIn = Boolean(session);
 
@@ -365,6 +362,7 @@ export default function App() {
     setWorkers([]);
     setDataState("idle");
     setImportOffer(false);
+    // Forces the effect to re-run and reload the public half of the data.
     loadedForSession.current = null;
     savedPricingIds.current = null;
   }
@@ -530,7 +528,7 @@ export default function App() {
           </div>
         )}
 
-        {authChecked && isLoggedIn && activePage === "form" && (
+        {activePage === "form" && (
           <WorkerForm
             /*
              * The form builds its first blank service row from the price list,
