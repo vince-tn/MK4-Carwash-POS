@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import imageCompression from "browser-image-compression";
+import { supabase } from "../lib/supabaseClient";
 
 const peso = new Intl.NumberFormat("en-PH", {
   style: "currency",
@@ -111,12 +113,52 @@ export default function WorkerForm({
     gcash: "",
     credit: "",
     discount: "",
-    referenceNo: "",
+    gcashRef: "",
+    creditRef: "",
     notes: "",
     photoName: "",
+    photoPath: "",
   });
 
+  const [proofFile, setProofFile] = useState(null);
+  const [proofStatus, setProofStatus] = useState("");
+
   const selectedWorker = workers.find((worker) => worker.id === form.workerId);
+
+  // Payment proofs are phone photos, typically 2-5 MB raw. Compress to roughly
+  // 300 KB before upload so the Supabase storage quota is not burned through.
+  async function handleProofSelect(e) {
+    const file = e.target.files?.[0];
+
+    if (!file) {
+      setProofFile(null);
+      setProofStatus("");
+      updateField("photoName", "");
+      return;
+    }
+
+    setProofStatus("Compressing...");
+
+    try {
+      const compressed = await imageCompression(file, {
+        maxSizeMB: 0.3,
+        maxWidthOrHeight: 1280,
+        useWebWorker: true,
+      });
+
+      setProofFile(compressed);
+      updateField("photoName", file.name);
+      setProofStatus(
+        `Ready: ${Math.round(compressed.size / 1024)} KB (from ${Math.round(
+          file.size / 1024
+        )} KB)`
+      );
+    } catch (error) {
+      console.error("Image compression failed", error);
+      setProofFile(null);
+      setProofStatus("Could not process that image. Please try another file.");
+    }
+  }
 
   const serviceTotal = useMemo(() => {
     return form.services.reduce(
@@ -160,14 +202,24 @@ export default function WorkerForm({
   }
 
   function togglePayment(name) {
-    setForm((prev) => ({
-      ...prev,
-      paymentEnabled: {
-        ...prev.paymentEnabled,
-        [name]: !prev.paymentEnabled[name],
-      },
-      [name]: prev.paymentEnabled[name] ? "" : prev[name],
-    }));
+    setForm((prev) => {
+      const turningOff = prev.paymentEnabled[name];
+
+      const next = {
+        ...prev,
+        paymentEnabled: {
+          ...prev.paymentEnabled,
+          [name]: !prev.paymentEnabled[name],
+        },
+        [name]: turningOff ? "" : prev[name],
+      };
+
+      // A reference number is meaningless once its method is unchecked.
+      if (turningOff && name === "gcash") next.gcashRef = "";
+      if (turningOff && name === "credit") next.creditRef = "";
+
+      return next;
+    });
   }
 
   function addService() {
@@ -270,13 +322,18 @@ export default function WorkerForm({
       gcash: "",
       credit: "",
       discount: "",
-      referenceNo: "",
+      gcashRef: "",
+      creditRef: "",
       notes: "",
       photoName: "",
+      photoPath: "",
     });
+
+    setProofFile(null);
+    setProofStatus("");
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
 
     if (!form.plateNumber.trim()) {
@@ -289,9 +346,42 @@ export default function WorkerForm({
       return;
     }
 
+    let photoPath = "";
+
+    if (proofFile) {
+      setProofStatus("Uploading proof...");
+
+      const extension = proofFile.type === "image/png" ? "png" : "jpg";
+      const objectPath = `${form.date}/${crypto.randomUUID()}.${extension}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("payment-proofs")
+        .upload(objectPath, proofFile, {
+          contentType: proofFile.type,
+          upsert: false,
+        });
+
+      if (uploadError) {
+        console.error("Proof upload failed", uploadError);
+        setProofStatus("");
+
+        // A failed image upload must not stop the till taking money, so the
+        // sale can still be recorded without its proof. The cashier decides.
+        const saveAnyway = confirm(
+          `Could not upload the payment proof: ${uploadError.message}\n\nSave the sales order anyway, without the proof image?`
+        );
+
+        if (!saveAnyway) return;
+      }
+
+      photoPath = objectPath;
+      setProofStatus("");
+    }
+
     const order = {
       id: generateSalesOrderId(orders),
       ...form,
+      photoPath,
       washerName: selectedWorker?.name || "Unknown Worker",
       serviceTotal,
       addOnTotal,
@@ -605,25 +695,36 @@ export default function WorkerForm({
               />
             </label>
 
-            <label>
-              Reference Number
-              <input
-                type="text"
-                placeholder="GCash / bank / receipt reference"
-                value={form.referenceNo}
-                onChange={(e) => updateField("referenceNo", e.target.value)}
-              />
-            </label>
+            {form.paymentEnabled.gcash && (
+              <label>
+                GCash Reference Number
+                <input
+                  type="text"
+                  placeholder="GCash reference"
+                  value={form.gcashRef}
+                  onChange={(e) => updateField("gcashRef", e.target.value)}
+                />
+              </label>
+            )}
+
+            {form.paymentEnabled.credit && (
+              <label>
+                Credit Reference Number
+                <input
+                  type="text"
+                  placeholder="Bank / credit reference"
+                  value={form.creditRef}
+                  onChange={(e) => updateField("creditRef", e.target.value)}
+                />
+              </label>
+            )}
 
             <label>
               Photo Proof
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) =>
-                  updateField("photoName", e.target.files?.[0]?.name || "")
-                }
-              />
+              <input type="file" accept="image/*" onChange={handleProofSelect} />
+              {proofStatus && (
+                <small className="field-hint">{proofStatus}</small>
+              )}
             </label>
 
             <label className="wide-field">
@@ -715,7 +816,10 @@ export default function WorkerForm({
 
         <div className="receipt-row">
           <span>Ref No.</span>
-          <strong>{form.referenceNo || "—"}</strong>
+          <strong>
+              {[form.gcashRef, form.creditRef].filter(Boolean).join(" / ") ||
+                "—"}
+            </strong>
         </div>
 
         <div className="receipt-row">

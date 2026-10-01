@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
+import { supabase } from "../lib/supabaseClient";
 
 const peso = new Intl.NumberFormat("en-PH", {
   style: "currency",
@@ -8,6 +9,33 @@ const peso = new Intl.NumberFormat("en-PH", {
 function csvSafe(value) {
   const stringValue = String(value ?? "");
   return `"${stringValue.replaceAll('"', '""')}"`;
+}
+
+// Orders created before references were split per payment method only carry a
+// single `referenceNo`, so fall back to it for those.
+function refSummary(order) {
+  const parts = [];
+
+  if (order.gcashRef) parts.push(`GCash: ${order.gcashRef}`);
+  if (order.creditRef) parts.push(`Credit: ${order.creditRef}`);
+  if (!parts.length && order.referenceNo) parts.push(order.referenceNo);
+
+  return parts.length ? parts.join(" / ") : "—";
+}
+
+// Proof images live in a private bucket, so they need a short-lived signed URL.
+async function openProof(order) {
+  const { data, error } = await supabase.storage
+    .from("payment-proofs")
+    .createSignedUrl(order.photoPath, 60);
+
+  if (error) {
+    console.error("Could not sign proof URL", error);
+    alert(`Could not open the proof image: ${error.message}`);
+    return;
+  }
+
+  window.open(data.signedUrl, "_blank", "noopener");
 }
 
 function getPaymentMethods(order) {
@@ -67,7 +95,8 @@ function PaymentEditModal({ order, onClose, onSave }) {
     gcash: order.gcash || "",
     credit: order.credit || "",
     discount: order.discount || "",
-    referenceNo: order.referenceNo || "",
+    gcashRef: order.gcashRef || order.referenceNo || "",
+    creditRef: order.creditRef || "",
     paymentNotes: order.paymentNotes || "",
   });
 
@@ -95,14 +124,23 @@ function PaymentEditModal({ order, onClose, onSave }) {
   }
 
   function togglePayment(method) {
-    setPaymentForm((prev) => ({
-      ...prev,
-      paymentEnabled: {
-        ...prev.paymentEnabled,
-        [method]: !prev.paymentEnabled[method],
-      },
-      [method]: prev.paymentEnabled[method] ? "" : prev[method],
-    }));
+    setPaymentForm((prev) => {
+      const turningOff = prev.paymentEnabled[method];
+
+      const next = {
+        ...prev,
+        paymentEnabled: {
+          ...prev.paymentEnabled,
+          [method]: !prev.paymentEnabled[method],
+        },
+        [method]: turningOff ? "" : prev[method],
+      };
+
+      if (turningOff && method === "gcash") next.gcashRef = "";
+      if (turningOff && method === "credit") next.creditRef = "";
+
+      return next;
+    });
   }
 
   function handleSubmit(e) {
@@ -238,15 +276,29 @@ function PaymentEditModal({ order, onClose, onSave }) {
             />
           </label>
 
-          <label>
-            Reference Number
-            <input
-              type="text"
-              value={paymentForm.referenceNo}
-              onChange={(e) => updateField("referenceNo", e.target.value)}
-              placeholder="GCash / receipt / bank reference"
-            />
-          </label>
+          {paymentForm.paymentEnabled.gcash && (
+            <label>
+              GCash Reference Number
+              <input
+                type="text"
+                value={paymentForm.gcashRef}
+                onChange={(e) => updateField("gcashRef", e.target.value)}
+                placeholder="GCash reference"
+              />
+            </label>
+          )}
+
+          {paymentForm.paymentEnabled.credit && (
+            <label>
+              Credit Reference Number
+              <input
+                type="text"
+                value={paymentForm.creditRef}
+                onChange={(e) => updateField("creditRef", e.target.value)}
+                placeholder="Bank / credit reference"
+              />
+            </label>
+          )}
 
           <label className="wide-field">
             Payment Notes
@@ -270,12 +322,12 @@ function PaymentEditModal({ order, onClose, onSave }) {
 export default function SalesRecords({
   orders,
   workers,
-  onClearOrders,
   onUpdateOrderPayment,
 }) {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("newest");
   const [editingPaymentOrder, setEditingPaymentOrder] = useState(null);
+  const [expandedOrder, setExpandedOrder] = useState(null);
 
   const [filters, setFilters] = useState({
     dateFrom: "",
@@ -346,6 +398,8 @@ export default function SalesRecords({
         order.washerName?.toLowerCase().includes(query) ||
         order.date?.toLowerCase().includes(query) ||
         order.referenceNo?.toLowerCase().includes(query) ||
+        order.gcashRef?.toLowerCase().includes(query) ||
+        order.creditRef?.toLowerCase().includes(query) ||
         servicesText.includes(query);
 
       const matchesDateFrom =
@@ -411,7 +465,8 @@ export default function SalesRecords({
       "Balance",
       "Commission",
       "Commission Rule",
-      "Reference Number",
+      "GCash Reference",
+      "Credit Reference",
       "Payment Notes",
       "Payment Updated At",
       "Photo Proof",
@@ -449,7 +504,8 @@ export default function SalesRecords({
         order.balance,
         order.commission,
         order.commissionLabel,
-        order.referenceNo,
+        order.gcashRef || order.referenceNo,
+        order.creditRef,
         order.paymentNotes,
         order.paymentUpdatedAt,
         order.photoName,
@@ -491,9 +547,6 @@ export default function SalesRecords({
             Export Filtered CSV
           </button>
 
-          <button className="danger-btn" onClick={onClearOrders}>
-            Clear Demo Data
-          </button>
         </div>
       </div>
 
@@ -624,9 +677,22 @@ export default function SalesRecords({
                 </td>
               </tr>
             ) : (
-              filteredAndSortedOrders.map((order) => (
-                <tr key={order.id}>
+              filteredAndSortedOrders.map((order) => {
+                const isOpen = expandedOrder === order.id;
+
+                return (
+                <Fragment key={order.id}>
+                <tr
+                  className={`record-row${isOpen ? " is-open" : ""}`}
+                  onClick={() =>
+                    setExpandedOrder((prev) =>
+                      prev === order.id ? null : order.id
+                    )
+                  }
+                  aria-expanded={isOpen}
+                >
                   <td>
+                    <span className="record-caret">{isOpen ? "▾" : "▸"}</span>
                     <strong>{order.id}</strong>
                   </td>
 
@@ -681,7 +747,7 @@ export default function SalesRecords({
                     )}
                   </td>
 
-                  <td>{order.referenceNo || "—"}</td>
+                  <td>{refSummary(order)}</td>
 
                   <td>{peso.format(order.total)}</td>
 
@@ -700,13 +766,124 @@ export default function SalesRecords({
                   <td>
                     <button
                       className="table-action-btn"
-                      onClick={() => setEditingPaymentOrder(order)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingPaymentOrder(order);
+                      }}
                     >
                       🖍
                     </button>
                   </td>
                 </tr>
-              ))
+
+                {isOpen && (
+                  <tr className="record-detail-row">
+                    <td colSpan="11">
+                      <div className="record-detail">
+                        <div className="record-detail-grid">
+                          <div>
+                            <h4>Car and Customer</h4>
+                            <dl>
+                              <dt>Plate</dt>
+                              <dd>{order.plateNumber || "—"}</dd>
+                              <dt>Car Type</dt>
+                              <dd>{order.carType || "—"}</dd>
+                              <dt>Customer</dt>
+                              <dd>{order.customerName || "—"}</dd>
+                              <dt>Contact</dt>
+                              <dd>{order.contactNumber || "—"}</dd>
+                              <dt>Staff on Duty</dt>
+                              <dd>{order.manager || "—"}</dd>
+                            </dl>
+                          </div>
+
+                          <div>
+                            <h4>Services and Add-ons</h4>
+                            <dl>
+                              {order.services?.map((service) => (
+                                <Fragment key={service.id}>
+                                  <dt>
+                                    {service.category} - {service.size}
+                                  </dt>
+                                  <dd>{peso.format(service.price)}</dd>
+                                </Fragment>
+                              ))}
+                              {(order.selectedAddOns || []).map((name) => (
+                                <Fragment key={name}>
+                                  <dt>{name}</dt>
+                                  <dd>add-on</dd>
+                                </Fragment>
+                              ))}
+                              <dt>Service Total</dt>
+                              <dd>{peso.format(order.serviceTotal || 0)}</dd>
+                              <dt>Add-on Total</dt>
+                              <dd>{peso.format(order.addOnTotal || 0)}</dd>
+                            </dl>
+                          </div>
+
+                          <div>
+                            <h4>Payment</h4>
+                            <dl>
+                              <dt>Total</dt>
+                              <dd>{peso.format(order.total || 0)}</dd>
+                              <dt>Paid</dt>
+                              <dd>{peso.format(order.totalPaid || 0)}</dd>
+                              <dt>Balance</dt>
+                              <dd>{peso.format(order.balance || 0)}</dd>
+                              <dt>References</dt>
+                              <dd>{refSummary(order)}</dd>
+                              <dt>Commission</dt>
+                              <dd>
+                                {peso.format(order.commission || 0)}
+                                {order.commissionLabel
+                                  ? ` (${order.commissionLabel})`
+                                  : ""}
+                              </dd>
+                            </dl>
+                          </div>
+
+                          <div>
+                            <h4>Proof and Notes</h4>
+                            <dl>
+                              <dt>Photo Proof</dt>
+                              <dd>
+                                {order.photoPath ? (
+                                  <button
+                                    type="button"
+                                    className="link-btn"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openProof(order);
+                                    }}
+                                  >
+                                    View {order.photoName || "image"}
+                                  </button>
+                                ) : order.photoName ? (
+                                  `${order.photoName} (image was not stored)`
+                                ) : (
+                                  "—"
+                                )}
+                              </dd>
+                              <dt>Notes</dt>
+                              <dd>{order.notes || "—"}</dd>
+                              <dt>Payment Notes</dt>
+                              <dd>{order.paymentNotes || "—"}</dd>
+                              <dt>Created</dt>
+                              <dd>
+                                {order.createdAt
+                                  ? new Date(order.createdAt).toLocaleString()
+                                  : "—"}
+                              </dd>
+                            </dl>
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
+                );
+              })
             )}
           </tbody>
         </table>

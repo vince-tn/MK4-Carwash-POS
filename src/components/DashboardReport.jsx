@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Download } from "lucide-react";
 import {
   peso,
@@ -16,14 +16,39 @@ function sumPayment(orders, method) {
   );
 }
 
+function describeServices(order) {
+  const services = (order.services || [])
+    .map((service) => service.category)
+    .filter(Boolean);
+
+  const addOns = order.selectedAddOns || [];
+
+  return [...services, ...addOns].join(", ") || "—";
+}
+
 /*
  * Mode-specific expanded reports for the Admin Dashboard stat boxes.
  * - sales: payment method breakdown (Cash / GCash / Credit / Discounts) per period
  * - cars: cars washed per period, broken down by car type
  * - commission: commission per worker per period
+ *
+ * Period rows are clickable. Opening one lists the individual cars behind the
+ * totals with their plate, car type and customer, so any figure in the report
+ * can be traced back to the real orders that produced it.
  */
 export default function DashboardReport({ orders, mode }) {
   const [period, setPeriod] = useState("day");
+  const [expandedPeriod, setExpandedPeriod] = useState(null);
+
+  function changePeriod(value) {
+    setPeriod(value);
+    // Period keys differ per grouping, so an open row would not survive.
+    setExpandedPeriod(null);
+  }
+
+  function toggleRow(key) {
+    setExpandedPeriod((prev) => (prev === key ? null : key));
+  }
 
   const report = useMemo(() => {
     const grouped = {};
@@ -64,7 +89,7 @@ export default function DashboardReport({ orders, mode }) {
         ];
       });
 
-      return { columns, rows, filename: "sales-report" };
+      return { columns, rows, filename: "sales-report", grouped, periodKeys };
     }
 
     if (mode === "cars") {
@@ -93,7 +118,7 @@ export default function DashboardReport({ orders, mode }) {
         ];
       });
 
-      return { columns, rows, filename: "cars-report" };
+      return { columns, rows, filename: "cars-report", grouped, periodKeys };
     }
 
     // commission
@@ -126,7 +151,7 @@ export default function DashboardReport({ orders, mode }) {
       ];
     });
 
-    return { columns, rows, filename: "commission-report" };
+    return { columns, rows, filename: "commission-report", grouped, periodKeys };
   }, [orders, mode, period]);
 
   const totalsRow = useMemo(() => {
@@ -185,7 +210,7 @@ export default function DashboardReport({ orders, mode }) {
               type="button"
               key={option.value}
               className={period === option.value ? "active" : ""}
-              onClick={() => setPeriod(option.value)}
+              onClick={() => changePeriod(option.value)}
             >
               {option.label}
             </button>
@@ -207,48 +232,114 @@ export default function DashboardReport({ orders, mode }) {
       {report.rows.length === 0 ? (
         <p className="empty">No sales data for this report yet.</p>
       ) : (
-        <div className="table-wrap report-table">
-          <table>
-            <thead>
-              <tr>
-                {report.columns.map((column) => (
-                  <th key={column.label}>{column.label}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {report.rows.map((row) => (
-                <tr key={row[0]}>
-                  {row.map((value, index) => (
-                    <td key={report.columns[index].label}>
-                      {index === 0 ? (
-                        <strong>{value}</strong>
-                      ) : report.columns[index].money ? (
-                        peso.format(value)
-                      ) : (
-                        value
-                      )}
-                    </td>
-                  ))}
-                </tr>
-              ))}
+        <>
+          <p className="report-hint">
+            Click any row to see the cars behind the totals.
+          </p>
 
-              {totalsRow && (
-                <tr className="report-total-row">
-                  {totalsRow.map((value, index) => (
-                    <td key={report.columns[index].label}>
-                      {index === 0
-                        ? value
-                        : report.columns[index].money
-                          ? peso.format(value)
-                          : value}
-                    </td>
+          <div className="table-wrap report-table">
+            <table>
+              <thead>
+                <tr>
+                  {report.columns.map((column) => (
+                    <th key={column.label}>{column.label}</th>
                   ))}
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {report.rows.map((row, rowIndex) => {
+                  const periodKey = report.periodKeys[rowIndex];
+                  const isOpen = expandedPeriod === periodKey;
+                  const periodOrders = report.grouped[periodKey] || [];
+
+                  return (
+                    <Fragment key={periodKey}>
+                      <tr
+                        className={`report-row${isOpen ? " is-open" : ""}`}
+                        onClick={() => toggleRow(periodKey)}
+                        aria-expanded={isOpen}
+                      >
+                        {row.map((value, index) => (
+                          <td key={report.columns[index].label}>
+                            {index === 0 ? (
+                              <strong>
+                                <span className="report-caret">
+                                  {isOpen ? "▾" : "▸"}
+                                </span>
+                                {value}
+                              </strong>
+                            ) : report.columns[index].money ? (
+                              peso.format(value)
+                            ) : (
+                              value
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+
+                      {isOpen && (
+                        <tr className="report-detail-row">
+                          <td colSpan={report.columns.length}>
+                            <div className="report-detail">
+                              <table>
+                                <thead>
+                                  <tr>
+                                    <th>Date</th>
+                                    <th>Plate</th>
+                                    <th>Car Type</th>
+                                    <th>Customer</th>
+                                    <th>Contact</th>
+                                    <th>Worker</th>
+                                    <th>Services &amp; Add-ons</th>
+                                    <th>Total</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {periodOrders.map((order) => (
+                                    <tr key={order.id}>
+                                      <td>{order.date || "—"}</td>
+                                      <td>
+                                        <strong>
+                                          {order.plateNumber || "—"}
+                                        </strong>
+                                      </td>
+                                      <td>{order.carType || "—"}</td>
+                                      <td>{order.customerName || "—"}</td>
+                                      <td>{order.contactNumber || "—"}</td>
+                                      <td>{order.washerName || "—"}</td>
+                                      <td>{describeServices(order)}</td>
+                                      <td>
+                                        {peso.format(Number(order.total) || 0)}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+
+                {totalsRow && (
+                  <tr className="report-total-row">
+                    {totalsRow.map((value, index) => (
+                      <td key={report.columns[index].label}>
+                        {index === 0
+                          ? value
+                          : report.columns[index].money
+                            ? peso.format(value)
+                            : value}
+                      </td>
+                    ))}
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

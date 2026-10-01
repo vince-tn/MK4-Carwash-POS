@@ -25,126 +25,12 @@ const WORKERS_STORAGE_KEY = "mk4-auto-care-workers";
 const COMMISSION_STORAGE_KEY = "mk4-auto-care-commission-settings";
 const PRICING_STORAGE_KEY = "mk4-auto-care-pricing";
 
-const defaultWorkers = [
-  {
-    id: "worker-frank",
-    name: "Frank",
-    role: "Washer",
-    phone: "",
-    address: "",
-    status: "Active",
-    dateJoined: "2026-04-01",
-    notes: "Sample worker profile.",
-    commissionMode: "inherit",
-    commissionValue: "",
-  },
-  {
-    id: "worker-john",
-    name: "John",
-    role: "Washer",
-    phone: "",
-    address: "",
-    status: "Active",
-    dateJoined: "2026-04-01",
-    notes: "",
-    commissionMode: "inherit",
-    commissionValue: "",
-  },
-];
 
 const defaultCommissionSettings = {
   globalMode: "service_percent",
   globalValue: "100",
 };
 
-const sampleOrders = [
-  {
-    id: "SO-20260413-001",
-    date: "2026-04-13",
-    plateNumber: "EMERALD WFO 8289",
-    customerName: "",
-    contactNumber: "",
-    carType: "Medium",
-    workerId: "worker-frank",
-    washerName: "Frank",
-    manager: "Manager",
-    services: [
-      {
-        id: "service-1",
-        category: "Wash and Wax",
-        size: "Medium",
-        price: 880,
-        commissionType: "Washing",
-        commissionRate: 30,
-      },
-    ],
-    selectedAddOns: [],
-    paymentEnabled: {
-      cash: false,
-      gcash: true,
-      credit: false,
-      discount: false,
-    },
-    serviceTotal: 880,
-    addOnTotal: 0,
-    total: 880,
-    cash: "",
-    gcash: "880",
-    credit: "",
-    discount: "",
-    totalPaid: 880,
-    balance: 0,
-    commission: 264,
-    commissionLabel: "Service percentage",
-    referenceNo: "3039731622544",
-    photoName: "proof-photo.jpg",
-    notes: "",
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: "SO-20260413-002",
-    date: "2026-04-13",
-    plateNumber: "ABC 1234",
-    customerName: "",
-    contactNumber: "",
-    carType: "Large",
-    workerId: "worker-john",
-    washerName: "John",
-    manager: "Manager",
-    services: [
-      {
-        id: "service-2",
-        category: "Premium Wash",
-        size: "Large",
-        price: 280,
-        commissionType: "Washing",
-        commissionRate: 30,
-      },
-    ],
-    selectedAddOns: ["Mr Pink"],
-    paymentEnabled: {
-      cash: true,
-      gcash: false,
-      credit: false,
-      discount: false,
-    },
-    serviceTotal: 280,
-    addOnTotal: 100,
-    total: 380,
-    cash: "380",
-    gcash: "",
-    credit: "",
-    discount: "",
-    totalPaid: 380,
-    balance: 0,
-    commission: 84,
-    commissionLabel: "Service percentage",
-    referenceNo: "",
-    photoName: "",
-    notes: "",
-    createdAt: new Date().toISOString(),
-  },
-];
 
 function safeJsonParse(value, fallback) {
   try {
@@ -160,11 +46,11 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [orders, setOrders] = useState(() => {
-    return safeJsonParse(localStorage.getItem(ORDERS_STORAGE_KEY), sampleOrders);
+    return safeJsonParse(localStorage.getItem(ORDERS_STORAGE_KEY), []);
   });
 
   const [workers, setWorkers] = useState(() => {
-    return safeJsonParse(localStorage.getItem(WORKERS_STORAGE_KEY), defaultWorkers);
+    return safeJsonParse(localStorage.getItem(WORKERS_STORAGE_KEY), []);
   });
 
   const [commissionSettings, setCommissionSettings] = useState(() => {
@@ -239,15 +125,6 @@ export default function App() {
     setActivePage("dashboard");
   }
 
-  function clearOrders() {
-    const confirmClear = confirm(
-      "This will clear all demo orders from this browser. Continue?"
-    );
-
-    if (!confirmClear) return;
-
-    setOrders([]);
-  }
   
   function updateOrderPayment(orderId, paymentUpdate) {
     setOrders((prev) =>
@@ -261,7 +138,8 @@ export default function App() {
           gcash: paymentUpdate.gcash,
           credit: paymentUpdate.credit,
           discount: paymentUpdate.discount,
-          referenceNo: paymentUpdate.referenceNo,
+          gcashRef: paymentUpdate.gcashRef,
+          creditRef: paymentUpdate.creditRef,
           paymentNotes: paymentUpdate.paymentNotes,
           paymentUpdatedAt: new Date().toISOString(),
         };
@@ -343,7 +221,7 @@ export default function App() {
             </div>
             <div className="brand-text">
               <h1>MK4 Auto Care</h1>
-              <p>Carwash POS Prototype</p>
+              <p>Carwash Point of Sale</p>
             </div>
           </div>
 
@@ -428,14 +306,6 @@ export default function App() {
             <span className="nav-label">Logout</span>
           </button>
         )}
-        {/* <div className="sidebar-note">
-          <strong>Prototype only</strong>
-          <p>
-            Data is saved in browser localStorage. CSV export is available in
-            Sales Records. Later, this can be connected to Google Sheets,
-            Supabase, Firebase, or Airtable.
-          </p>
-        </div> */}
       </aside>
 
       <main className="main-content">
@@ -497,7 +367,6 @@ export default function App() {
           <SalesRecords
             orders={orders}
             workers={workers}
-            onClearOrders={clearOrders}
             onUpdateOrderPayment={updateOrderPayment}
           />
         )}

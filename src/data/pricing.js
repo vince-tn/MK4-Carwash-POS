@@ -212,7 +212,6 @@ export const addOns = [
   { name: "Labor Only", price: 0 },
 ];
 
-export const washers = ["Frank", "John", "Mark", "Angel", "Rico", "Other"];
 
 // Gives every category, package item and add-on a stable id so the
 // Services admin page can edit them. Safe to call on already-tagged data.
