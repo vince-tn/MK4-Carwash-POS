@@ -393,7 +393,16 @@ export default function WorkerForm({
       createdAt: new Date().toISOString(),
     };
 
-    onAddOrder(order);
+    // The order now goes to the shared database, so it can fail. Only clear
+    // the form once it is actually stored.
+    try {
+      await onAddOrder(order);
+    } catch (error) {
+      console.error("Could not save the sales order", error);
+      alert(`Could not save the sales order: ${error.message}`);
+      return;
+    }
+
     resetForm();
 
     alert("Sales order saved.");

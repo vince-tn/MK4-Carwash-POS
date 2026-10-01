@@ -18,12 +18,15 @@ import ServicesManagement from "./components/ServicesManagement";
 import logo from "./assets/logo.png";
 import { supabase } from "./lib/supabaseClient";
 import AuthPage from "./components/AuthPage";
-import { buildDefaultPricing, ensurePricingIds } from "./data/pricing";
+import { buildDefaultPricing } from "./data/pricing";
+import * as db from "./lib/db";
 
-const ORDERS_STORAGE_KEY = "mk4-auto-care-orders";
-const WORKERS_STORAGE_KEY = "mk4-auto-care-workers";
-const COMMISSION_STORAGE_KEY = "mk4-auto-care-commission-settings";
-const PRICING_STORAGE_KEY = "mk4-auto-care-pricing";
+// Only kept so a device that still holds records from before the database
+// cutover can hand them over once; see the import banner below.
+const LOCAL_KEYS = {
+  orders: "mk4-auto-care-orders",
+  workers: "mk4-auto-care-workers",
+};
 
 
 const defaultCommissionSettings = {
@@ -32,57 +35,128 @@ const defaultCommissionSettings = {
 };
 
 
-function safeJsonParse(value, fallback) {
-  try {
-    return value ? JSON.parse(value) : fallback;
-  } catch {
-    return fallback;
-  }
-}
 
 export default function App() {
   const [activePage, setActivePage] = useState("form");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [session, setSession] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
-  const [orders, setOrders] = useState(() => {
-    return safeJsonParse(localStorage.getItem(ORDERS_STORAGE_KEY), []);
-  });
+  const [orders, setOrders] = useState([]);
+  const [workers, setWorkers] = useState([]);
+  const [commissionSettings, setCommissionSettings] = useState(
+    defaultCommissionSettings
+  );
+  const [pricing, setPricing] = useState({ categories: [], addOns: [] });
 
-  const [workers, setWorkers] = useState(() => {
-    return safeJsonParse(localStorage.getItem(WORKERS_STORAGE_KEY), []);
-  });
+  // idle (signed out) | loading | ready | error
+  const [dataState, setDataState] = useState("idle");
+  const [dataError, setDataError] = useState("");
+  const [importOffer, setImportOffer] = useState(false);
+  const [importing, setImporting] = useState(false);
 
-  const [commissionSettings, setCommissionSettings] = useState(() => {
-    return safeJsonParse(
-      localStorage.getItem(COMMISSION_STORAGE_KEY),
-      defaultCommissionSettings
-    );
-  });
+  // Every table is readable only by signed-in staff, so loading waits for the
+  // session rather than running on mount.
+  useEffect(() => {
+    // Signed out: nothing to load. State is cleared on logout instead, so
+    // this effect never sets state synchronously.
+    if (!session) return undefined;
 
-  const [pricing, setPricing] = useState(() => {
-    const stored = safeJsonParse(localStorage.getItem(PRICING_STORAGE_KEY), null);
-    return stored ? ensurePricingIds(stored) : buildDefaultPricing();
-  });
+    let cancelled = false;
+
+    async function load() {
+      setDataState("loading");
+      setDataError("");
+
+      try {
+        // A brand new project has no price list, so fall back to the bundled
+        // one once rather than leaving the till with nothing to sell.
+        if (await db.isPricingEmpty()) {
+          await db.seedPricing(buildDefaultPricing());
+        }
+
+        const [nextOrders, nextWorkers, nextCommission, nextPricing] =
+          await Promise.all([
+            db.fetchOrders(),
+            db.fetchWorkers(),
+            db.fetchCommissionSettings(),
+            db.fetchPricing(),
+          ]);
+
+        if (cancelled) return;
+
+        setOrders(nextOrders);
+        setWorkers(nextWorkers);
+        setCommissionSettings(nextCommission);
+        setPricing(nextPricing);
+        setDataState("ready");
+        setImportOffer(!nextWorkers.length && db.hasLocalData(LOCAL_KEYS));
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Could not load data", error);
+        setDataError(error.message || "Could not load data.");
+        setDataState("error");
+      }
+    }
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
+
+  // The Services page reports every keystroke, so writes are debounced.
+  useEffect(() => {
+    if (!session || dataState !== "ready") return undefined;
+
+    const timer = setTimeout(() => {
+      db.savePricing(pricing).catch((error) => {
+        console.error("Could not save the price list", error);
+      });
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [pricing, dataState, session]);
 
   useEffect(() => {
-    localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
-  }, [orders]);
+    if (!session || dataState !== "ready") return undefined;
 
-  useEffect(() => {
-    localStorage.setItem(WORKERS_STORAGE_KEY, JSON.stringify(workers));
-  }, [workers]);
+    const timer = setTimeout(() => {
+      db.saveCommissionSettings(commissionSettings).catch((error) => {
+        console.error("Could not save commission settings", error);
+      });
+    }, 800);
 
-  useEffect(() => {
-    localStorage.setItem(
-      COMMISSION_STORAGE_KEY,
-      JSON.stringify(commissionSettings)
-    );
-  }, [commissionSettings]);
+    return () => clearTimeout(timer);
+  }, [commissionSettings, dataState, session]);
 
-  useEffect(() => {
-    localStorage.setItem(PRICING_STORAGE_KEY, JSON.stringify(pricing));
-  }, [pricing]);
+  async function runImport() {
+    setImporting(true);
+
+    try {
+      const summary = await db.importLocalStorage(LOCAL_KEYS);
+
+      const [nextOrders, nextWorkers] = await Promise.all([
+        db.fetchOrders(),
+        db.fetchWorkers(),
+      ]);
+
+      setOrders(nextOrders);
+      setWorkers(nextWorkers);
+      setImportOffer(false);
+
+      alert(
+        `Imported ${summary.workers} worker(s) and ${summary.orders} order(s) into the shared database.`
+      );
+    } catch (error) {
+      console.error("Import failed", error);
+      alert(
+        `Could not import this device's records: ${error.message}\n\nNothing was removed from this browser.`
+      );
+    } finally {
+      setImporting(false);
+    }
+  }
 
   useEffect(() => {
     let isMounted = true;
@@ -120,69 +194,88 @@ export default function App() {
     };
   }, []);
 
-  function addOrder(order) {
-    setOrders((prev) => [order, ...prev]);
+  async function addOrder(order) {
+    // Add-on rows store their price, which only the current price list knows.
+    const addOnPrices = {};
+    (pricing.addOns || []).forEach((addOn) => {
+      addOnPrices[addOn.name] = addOn.price;
+    });
+
+    const saved = await db.createOrder({ ...order, addOnPrices });
+
+    setOrders((prev) => [saved, ...prev]);
     setActivePage("dashboard");
   }
 
   
-  function updateOrderPayment(orderId, paymentUpdate) {
-    setOrders((prev) =>
-      prev.map((order) => {
-        if (order.id !== orderId) return order;
+  async function updateOrderPayment(orderId, paymentUpdate) {
+    const existing = orders.find((order) => order.id === orderId);
+    if (!existing) return;
 
-        const updatedOrder = {
-          ...order,
-          paymentEnabled: paymentUpdate.paymentEnabled,
-          cash: paymentUpdate.cash,
-          gcash: paymentUpdate.gcash,
-          credit: paymentUpdate.credit,
-          discount: paymentUpdate.discount,
-          gcashRef: paymentUpdate.gcashRef,
-          creditRef: paymentUpdate.creditRef,
-          paymentNotes: paymentUpdate.paymentNotes,
-          paymentUpdatedAt: new Date().toISOString(),
-        };
+    const discount = paymentUpdate.paymentEnabled?.discount
+      ? Number(paymentUpdate.discount) || 0
+      : 0;
 
-        const discount = updatedOrder.paymentEnabled?.discount
-          ? Number(updatedOrder.discount) || 0
-          : 0;
-
-        const total = Math.max(
-          Number(updatedOrder.serviceTotal || 0) +
-            Number(updatedOrder.addOnTotal || 0) -
-            discount,
-          0
-        );
-
-        const totalPaid =
-          (updatedOrder.paymentEnabled?.cash ? Number(updatedOrder.cash) || 0 : 0) +
-          (updatedOrder.paymentEnabled?.gcash ? Number(updatedOrder.gcash) || 0 : 0) +
-          (updatedOrder.paymentEnabled?.credit ? Number(updatedOrder.credit) || 0 : 0);
-
-        return {
-          ...updatedOrder,
-          total,
-          totalPaid,
-          balance: total - totalPaid,
-        };
-      })
+    const total = Math.max(
+      Number(existing.serviceTotal || 0) +
+        Number(existing.addOnTotal || 0) -
+        discount,
+      0
     );
+
+    const totalPaid =
+      (paymentUpdate.paymentEnabled?.cash ? Number(paymentUpdate.cash) || 0 : 0) +
+      (paymentUpdate.paymentEnabled?.gcash ? Number(paymentUpdate.gcash) || 0 : 0) +
+      (paymentUpdate.paymentEnabled?.credit
+        ? Number(paymentUpdate.credit) || 0
+        : 0);
+
+    try {
+      const saved = await db.updateOrderPayment(existing.dbId, {
+        ...paymentUpdate,
+        total,
+        totalPaid,
+        balance: total - totalPaid,
+      });
+
+      setOrders((prev) =>
+        prev.map((order) => (order.id === orderId ? saved : order))
+      );
+    } catch (error) {
+      console.error("Could not update the payment", error);
+      alert(`Could not update the payment: ${error.message}`);
+    }
   }
 
-  function addWorker(worker) {
-    setWorkers((prev) => [worker, ...prev]);
+  async function addWorker(worker) {
+    try {
+      const saved = await db.createWorker(worker);
+      setWorkers((prev) => [saved, ...prev]);
+    } catch (error) {
+      console.error("Could not add the worker", error);
+      alert(`Could not add the worker: ${error.message}`);
+    }
   }
 
-  function updateWorker(workerId, updatedWorker) {
-    setWorkers((prev) =>
-      prev.map((worker) =>
-        worker.id === workerId ? { ...worker, ...updatedWorker } : worker
-      )
-    );
+  async function updateWorker(workerId, updatedWorker) {
+    const existing = workers.find((worker) => worker.id === workerId);
+
+    try {
+      const saved = await db.updateWorker(workerId, {
+        ...existing,
+        ...updatedWorker,
+      });
+
+      setWorkers((prev) =>
+        prev.map((worker) => (worker.id === workerId ? saved : worker))
+      );
+    } catch (error) {
+      console.error("Could not update the worker", error);
+      alert(`Could not update the worker: ${error.message}`);
+    }
   }
 
-  function deleteWorker(workerId) {
+  async function deleteWorker(workerId) {
     const hasOrders = orders.some((order) => order.workerId === workerId);
 
     if (hasOrders) {
@@ -195,10 +288,22 @@ export default function App() {
     const confirmDelete = confirm("Delete this worker profile?");
     if (!confirmDelete) return;
 
-    setWorkers((prev) => prev.filter((worker) => worker.id !== workerId));
+    try {
+      await db.deleteWorker(workerId);
+      setWorkers((prev) => prev.filter((worker) => worker.id !== workerId));
+    } catch (error) {
+      console.error("Could not delete the worker", error);
+      alert(`Could not delete the worker: ${error.message}`);
+    }
   }
 
-  const protectedPages = ["dashboard", "records", "workers", "services"];
+  const protectedPages = [
+    "form",
+    "dashboard",
+    "records",
+    "workers",
+    "services",
+  ];
   const needsAuth = protectedPages.includes(activePage);
   const isLoggedIn = Boolean(session);
 
@@ -206,6 +311,12 @@ export default function App() {
     await supabase.auth.signOut();
     setSession(null);
     setActivePage("form");
+
+    // Do not leave another user's records on screen behind the login wall.
+    setOrders([]);
+    setWorkers([]);
+    setDataState("idle");
+    setImportOffer(false);
   }
 
   function goToPage(page) {
@@ -213,6 +324,25 @@ export default function App() {
   }
   return (
     <div className={`app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
+      {dataState === "loading" && (
+        <div className="data-banner">Loading records…</div>
+      )}
+
+      {dataState === "error" && (
+        <div className="data-banner is-error">
+          Could not reach the database: {dataError}
+        </div>
+      )}
+
+      {importOffer && (
+        <div className="data-banner is-action">
+          This browser still holds records from before the shared database.
+          <button type="button" onClick={runImport} disabled={importing}>
+            {importing ? "Importing…" : "Import them now"}
+          </button>
+        </div>
+      )}
+
       <aside className={`sidebar${sidebarCollapsed ? " collapsed" : ""}`}>
         <div className="sidebar-top">
           <div className="brand">
