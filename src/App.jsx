@@ -123,7 +123,7 @@ export default function App() {
         }
 
         const [nextWorkers, nextCommission, nextPricing] = await Promise.all([
-          db.fetchWorkers(),
+          db.fetchWorkers({ publicOnly: !session }),
           db.fetchCommissionSettings(),
           db.fetchPricing(),
         ]);
@@ -261,7 +261,12 @@ export default function App() {
     const saved = await db.createOrder({ ...order, addOnPrices });
 
     setOrders((prev) => [saved, ...prev]);
-    setActivePage("dashboard");
+
+    // A signed-out worker stays on the form for the next car; the dashboard
+    // would only show them the login card.
+    if (session) setActivePage("dashboard");
+
+    return saved;
   }
 
   
@@ -619,7 +624,6 @@ export default function App() {
              */
             key={pricing.categories.length ? "priced" : "empty"}
             onAddOrder={addOrder}
-            orders={orders}
             workers={workers}
             commissionSettings={commissionSettings}
             pricingData={pricing.categories}

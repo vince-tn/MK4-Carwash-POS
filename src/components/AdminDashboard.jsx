@@ -14,6 +14,7 @@ import {
 import StatCard from "./StatCard";
 import WorkerReports from "./WorkerReports";
 import DashboardReport from "./DashboardReport";
+import { localDateString } from "../lib/reportUtils";
 
 const peso = new Intl.NumberFormat("en-PH", {
   style: "currency",
@@ -55,8 +56,11 @@ export default function AdminDashboard({ orders, workers }) {
     0
   );
 
+  // The quota is per day. Every other figure on this page is all-time.
   const quotaTarget = 60;
-  const quotaPercent = Math.min((totalCars / quotaTarget) * 100, 100);
+  const today = localDateString();
+  const carsToday = orders.filter((order) => order.date === today).length;
+  const quotaPercent = Math.min((carsToday / quotaTarget) * 100, 100);
 
   const serviceMap = {};
   const workerMap = {};
@@ -130,7 +134,7 @@ export default function AdminDashboard({ orders, workers }) {
         <div className="quota-pill">
           <span>Daily Quota</span>
           <strong>
-            {totalCars}/{quotaTarget} cars
+            {carsToday}/{quotaTarget} cars
           </strong>
         </div>
       </div>
@@ -145,7 +149,7 @@ export default function AdminDashboard({ orders, workers }) {
         <StatCard
           title="Total Cars"
           value={totalCars}
-          subtext="Submitted orders"
+          subtext="All time"
           onClick={() => toggleCard("cars")}
           active={expandedCard === "cars"}
         />
@@ -214,7 +218,7 @@ export default function AdminDashboard({ orders, workers }) {
         <strong>
           {quotaPercent >= 100
             ? "Quota reached. Incentive unlocked."
-            : `${quotaTarget - totalCars} cars remaining`}
+            : `${quotaTarget - carsToday} cars remaining today`}
         </strong>
       </div>
 

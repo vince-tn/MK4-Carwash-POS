@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import WorkerReports from "./WorkerReports";
+import { localDateString } from "../lib/reportUtils";
 
 const peso = new Intl.NumberFormat("en-PH", {
   style: "currency",
@@ -25,6 +26,129 @@ function getWorkerStats(workerId, orders) {
   };
 }
 
+/*
+ * One worker's editable fields. Typed fields are held in a local draft and
+ * saved when the field loses focus: saving on every keystroke sent a request
+ * per letter, and a late reply could overwrite what had been typed since.
+ * Dropdowns and the date are single choices, so they save straight away.
+ */
+function WorkerProfileFields({ worker, onUpdateWorker }) {
+  const [draft, setDraft] = useState(worker);
+
+  function edit(field, value) {
+    setDraft((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function commit(field) {
+    if (draft[field] === worker[field]) return;
+
+    // A worker needs a name; put the saved one back rather than store a blank.
+    if (field === "name" && !String(draft.name).trim()) {
+      edit("name", worker.name);
+      return;
+    }
+
+    onUpdateWorker(worker.id, { [field]: draft[field] });
+  }
+
+  function choose(field, value) {
+    edit(field, value);
+    onUpdateWorker(worker.id, { [field]: value });
+  }
+
+  function textProps(field) {
+    return {
+      value: draft[field],
+      onChange: (e) => edit(field, e.target.value),
+      onBlur: () => commit(field),
+    };
+  }
+
+  return (
+    <div className="form-grid">
+      <label>
+        Worker Name
+        <input {...textProps("name")} />
+      </label>
+
+      <label>
+        Role
+        <select
+          value={draft.role}
+          onChange={(e) => choose("role", e.target.value)}
+        >
+          <option>Washer</option>
+          <option>Detailer</option>
+          <option>Manager</option>
+          <option>Cashier</option>
+          <option>Other</option>
+        </select>
+      </label>
+
+      <label>
+        Phone
+        <input {...textProps("phone")} />
+      </label>
+
+      <label>
+        Status
+        <select
+          value={draft.status}
+          onChange={(e) => choose("status", e.target.value)}
+        >
+          <option>Active</option>
+          <option>Inactive</option>
+        </select>
+      </label>
+
+      <label>
+        Date Joined
+        <input
+          type="date"
+          value={draft.dateJoined}
+          onChange={(e) => choose("dateJoined", e.target.value)}
+        />
+      </label>
+
+      <label>
+        Commission Rule
+        <select
+          value={draft.commissionMode}
+          onChange={(e) => choose("commissionMode", e.target.value)}
+        >
+          <option value="inherit">Use global setting</option>
+          <option value="service_percent">Use service percentage</option>
+          <option value="custom_percent">Custom percentage</option>
+          <option value="flat_per_service">Flat per service</option>
+          <option value="flat_per_order">Flat per sales order</option>
+        </select>
+      </label>
+
+      <label>
+        Commission Value
+        <input
+          type="number"
+          {...textProps("commissionValue")}
+          disabled={
+            draft.commissionMode === "inherit" ||
+            draft.commissionMode === "service_percent"
+          }
+        />
+      </label>
+
+      <label className="wide-field">
+        Address
+        <input {...textProps("address")} />
+      </label>
+
+      <label className="wide-field">
+        Notes
+        <input {...textProps("notes")} />
+      </label>
+    </div>
+  );
+}
+
 export default function WorkerManagement({
   workers,
   orders,
@@ -34,7 +158,7 @@ export default function WorkerManagement({
   commissionSettings,
   onUpdateCommissionSettings,
 }) {
-  const today = new Date().toISOString().split("T")[0];
+  const today = localDateString();
 
   const [newWorker, setNewWorker] = useState({
     name: "",
@@ -306,130 +430,10 @@ export default function WorkerManagement({
                 </summary>
 
                 <div className="worker-profile-body">
-                  <div className="form-grid">
-                    <label>
-                      Worker Name
-                      <input
-                        value={worker.name}
-                        onChange={(e) =>
-                          onUpdateWorker(worker.id, { name: e.target.value })
-                        }
-                      />
-                    </label>
-
-                    <label>
-                      Role
-                      <select
-                        value={worker.role}
-                        onChange={(e) =>
-                          onUpdateWorker(worker.id, { role: e.target.value })
-                        }
-                      >
-                        <option>Washer</option>
-                        <option>Detailer</option>
-                        <option>Manager</option>
-                        <option>Cashier</option>
-                        <option>Other</option>
-                      </select>
-                    </label>
-
-                    <label>
-                      Phone
-                      <input
-                        value={worker.phone}
-                        onChange={(e) =>
-                          onUpdateWorker(worker.id, { phone: e.target.value })
-                        }
-                      />
-                    </label>
-
-                    <label>
-                      Status
-                      <select
-                        value={worker.status}
-                        onChange={(e) =>
-                          onUpdateWorker(worker.id, { status: e.target.value })
-                        }
-                      >
-                        <option>Active</option>
-                        <option>Inactive</option>
-                      </select>
-                    </label>
-
-                    <label>
-                      Date Joined
-                      <input
-                        type="date"
-                        value={worker.dateJoined}
-                        onChange={(e) =>
-                          onUpdateWorker(worker.id, {
-                            dateJoined: e.target.value,
-                          })
-                        }
-                      />
-                    </label>
-
-                    <label>
-                      Commission Rule
-                      <select
-                        value={worker.commissionMode}
-                        onChange={(e) =>
-                          onUpdateWorker(worker.id, {
-                            commissionMode: e.target.value,
-                          })
-                        }
-                      >
-                        <option value="inherit">Use global setting</option>
-                        <option value="service_percent">
-                          Use service percentage
-                        </option>
-                        <option value="custom_percent">Custom percentage</option>
-                        <option value="flat_per_service">
-                          Flat per service
-                        </option>
-                        <option value="flat_per_order">
-                          Flat per sales order
-                        </option>
-                      </select>
-                    </label>
-
-                    <label>
-                      Commission Value
-                      <input
-                        type="number"
-                        value={worker.commissionValue}
-                        onChange={(e) =>
-                          onUpdateWorker(worker.id, {
-                            commissionValue: e.target.value,
-                          })
-                        }
-                        disabled={
-                          worker.commissionMode === "inherit" ||
-                          worker.commissionMode === "service_percent"
-                        }
-                      />
-                    </label>
-
-                    <label className="wide-field">
-                      Address
-                      <input
-                        value={worker.address}
-                        onChange={(e) =>
-                          onUpdateWorker(worker.id, { address: e.target.value })
-                        }
-                      />
-                    </label>
-
-                    <label className="wide-field">
-                      Notes
-                      <input
-                        value={worker.notes}
-                        onChange={(e) =>
-                          onUpdateWorker(worker.id, { notes: e.target.value })
-                        }
-                      />
-                    </label>
-                  </div>
+                  <WorkerProfileFields
+                    worker={worker}
+                    onUpdateWorker={onUpdateWorker}
+                  />
 
                   <div className="worker-stat-grid">
                     <div>

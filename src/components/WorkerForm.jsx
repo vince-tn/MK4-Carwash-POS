@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import imageCompression from "browser-image-compression";
 import { supabase } from "../lib/supabaseClient";
+import { localDateString } from "../lib/reportUtils";
 
 const peso = new Intl.NumberFormat("en-PH", {
   style: "currency",
@@ -19,15 +20,6 @@ function createBlankService(pricingData) {
     commissionType: firstCategory?.commissionType || "",
     commissionRate: firstCategory?.commissionRate || 0,
   };
-}
-
-function generateSalesOrderId(orders) {
-  const today = new Date();
-  const datePart = today.toISOString().slice(0, 10).replaceAll("-", "");
-  const todayCount =
-    orders.filter((order) => order.id?.includes(`SO-${datePart}`)).length + 1;
-
-  return `SO-${datePart}-${String(todayCount).padStart(3, "0")}`;
 }
 
 function calculateCommission({ services, worker, commissionSettings }) {
@@ -84,13 +76,12 @@ function calculateCommission({ services, worker, commissionSettings }) {
 
 export default function WorkerForm({
   onAddOrder,
-  orders,
   workers,
   commissionSettings,
   pricingData,
   addOns,
 }) {
-  const today = new Date().toISOString().split("T")[0];
+  const today = localDateString();
   const activeWorkers = workers.filter((worker) => worker.status === "Active");
 
   const [form, setForm] = useState({
@@ -372,14 +363,17 @@ export default function WorkerForm({
         );
 
         if (!saveAnyway) return;
+      } else {
+        // Only a path that was actually stored; otherwise the record links
+        // to an image that does not exist.
+        photoPath = objectPath;
       }
 
-      photoPath = objectPath;
       setProofStatus("");
     }
 
+    // No id here: the database assigns the sales order number on save.
     const order = {
-      id: generateSalesOrderId(orders),
       ...form,
       photoPath,
       washerName: selectedWorker?.name || "Unknown Worker",
@@ -395,8 +389,10 @@ export default function WorkerForm({
 
     // The order now goes to the shared database, so it can fail. Only clear
     // the form once it is actually stored.
+    let saved;
+
     try {
-      await onAddOrder(order);
+      saved = await onAddOrder(order);
     } catch (error) {
       console.error("Could not save the sales order", error);
       alert(`Could not save the sales order: ${error.message}`);
@@ -405,7 +401,7 @@ export default function WorkerForm({
 
     resetForm();
 
-    alert("Sales order saved.");
+    alert(`Sales order ${saved.id} saved.`);
   }
 
   return (
@@ -441,7 +437,7 @@ export default function WorkerForm({
 
             <label>
               Sales Order ID
-              <input value={generateSalesOrderId(orders)} disabled />
+              <input value="Assigned when saved" disabled />
             </label>
 
             <label>
@@ -784,7 +780,7 @@ export default function WorkerForm({
 
         <div className="receipt-row">
           <span>Sales Order</span>
-          <strong>{generateSalesOrderId(orders)}</strong>
+          <strong>Assigned when saved</strong>
         </div>
 
         <div className="receipt-row">

@@ -1,6 +1,52 @@
 import { buildDefaultPricing } from "../data/pricing";
 import { peso } from "../lib/reportUtils";
 
+// Category names, add-on names and sizes within a category are unique in the
+// database (06), so two "New Service" rows would be refused on save.
+function uniqueName(base, taken) {
+  if (!taken.includes(base)) return base;
+
+  let n = 2;
+  while (taken.includes(`${base} ${n}`)) n += 1;
+
+  return `${base} ${n}`;
+}
+
+/*
+ * The default price list with each row given the id of the existing row of
+ * the same name. Fresh ids would make the save insert a second "Premium Wash"
+ * before deleting the first, which the unique names refuse.
+ */
+function defaultsKeepingIds(current) {
+  const defaults = buildDefaultPricing();
+  const categoryByName = new Map(
+    current.categories.map((category) => [category.category, category])
+  );
+  const addOnByName = new Map(current.addOns.map((addOn) => [addOn.name, addOn]));
+
+  return {
+    categories: defaults.categories.map((category) => {
+      const existing = categoryByName.get(category.category);
+      if (!existing) return category;
+
+      const itemBySize = new Map(existing.items.map((item) => [item.size, item]));
+
+      return {
+        ...category,
+        id: existing.id,
+        items: category.items.map((item) => ({
+          ...item,
+          id: itemBySize.get(item.size)?.id || item.id,
+        })),
+      };
+    }),
+    addOns: defaults.addOns.map((addOn) => ({
+      ...addOn,
+      id: addOnByName.get(addOn.name)?.id || addOn.id,
+    })),
+  };
+}
+
 export default function ServicesManagement({ pricing, onUpdatePricing }) {
   const { categories, addOns } = pricing;
 
@@ -19,7 +65,10 @@ export default function ServicesManagement({ pricing, onUpdatePricing }) {
       categories: [
         {
           id: crypto.randomUUID(),
-          category: "New Service",
+          category: uniqueName(
+            "New Service",
+            categories.map((category) => category.category)
+          ),
           commissionType: "Washing",
           commissionRate: 30,
           items: [{ id: crypto.randomUUID(), size: "Medium", price: 0 }],
@@ -67,7 +116,14 @@ export default function ServicesManagement({ pricing, onUpdatePricing }) {
               ...category,
               items: [
                 ...category.items,
-                { id: crypto.randomUUID(), size: "", price: 0 },
+                {
+                  id: crypto.randomUUID(),
+                  size: uniqueName(
+                    "New Size",
+                    category.items.map((item) => item.size)
+                  ),
+                  price: 0,
+                },
               ],
             }
       ),
@@ -109,7 +165,17 @@ export default function ServicesManagement({ pricing, onUpdatePricing }) {
   function addAddOn() {
     onUpdatePricing({
       ...pricing,
-      addOns: [...addOns, { id: crypto.randomUUID(), name: "", price: 0 }],
+      addOns: [
+        ...addOns,
+        {
+          id: crypto.randomUUID(),
+          name: uniqueName(
+            "New Add-on",
+            addOns.map((addOn) => addOn.name)
+          ),
+          price: 0,
+        },
+      ],
     });
   }
 
@@ -129,7 +195,7 @@ export default function ServicesManagement({ pricing, onUpdatePricing }) {
     );
     if (!confirmReset) return;
 
-    onUpdatePricing(buildDefaultPricing());
+    onUpdatePricing(defaultsKeepingIds(pricing));
   }
 
   return (

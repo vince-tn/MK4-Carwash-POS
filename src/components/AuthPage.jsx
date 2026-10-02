@@ -46,8 +46,8 @@ export default function AuthPage({ onLoginSuccess }) {
         <h2>MK4 Auto Care Login</h2>
 
         <p>
-          Sales entry, records, worker profiles and commission settings all
-          require a signed-in account.
+          Sales records, reports, worker profiles and pricing require a
+          signed-in account. Recording a sale on the Worker Form does not.
         </p>
 
         <form onSubmit={handleSubmit} className="auth-form">

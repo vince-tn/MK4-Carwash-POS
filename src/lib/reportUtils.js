@@ -8,6 +8,16 @@ export function csvSafe(value) {
   return `"${stringValue.replaceAll('"', '""')}"`;
 }
 
+// YYYY-MM-DD on this device's calendar. toISOString() gives the UTC date,
+// which in Manila is still yesterday until 8 AM.
+export function localDateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
 export function getPeriodKey(dateStr, period) {
   if (!dateStr) return "Unknown";
 
@@ -21,11 +31,7 @@ export function getPeriodKey(dateStr, period) {
   const dayOffset = (date.getDay() + 6) % 7;
   date.setDate(date.getDate() - dayOffset);
 
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
+  return localDateString(date);
 }
 
 export function formatPeriodLabel(key, period) {

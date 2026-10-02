@@ -105,7 +105,7 @@ export async function fetchOrders() {
   return rows.map(toAppOrder);
 }
 
-export async function createOrder(order) {
+function toOrderRow(order) {
   // A worker_id only exists once workers live in the database; guard against
   // the id being a leftover local string rather than a uuid.
   const workerId =
@@ -114,86 +114,116 @@ export async function createOrder(order) {
       ? order.workerId
       : null;
 
-  // Minted here rather than by the database: a signed-out worker has insert
-  // but no select on orders, and PostgREST's insert().select() needs a select
-  // policy. Knowing the id up front also lets the child rows be written
-  // without reading anything back.
-  const id = crypto.randomUUID();
+  return {
+    order_date: order.date,
+    plate_number: order.plateNumber,
+    customer_name: order.customerName || null,
+    contact_number: order.contactNumber || null,
+    car_type: order.carType || null,
+    car_brand: order.carBrand || null,
+    worker_id: workerId,
+    worker_name: order.washerName || null,
+    manager: order.manager || null,
+    service_total: num(order.serviceTotal),
+    addon_total: num(order.addOnTotal),
+    cash: num(order.cash),
+    gcash: num(order.gcash),
+    credit: num(order.credit),
+    discount: num(order.discount),
+    payment_enabled: order.paymentEnabled || EMPTY_PAYMENT_ENABLED,
+    total: num(order.total),
+    total_paid: num(order.totalPaid),
+    balance: num(order.balance),
+    commission: num(order.commission),
+    commission_label: order.commissionLabel || null,
+    gcash_ref: order.gcashRef || null,
+    credit_ref: order.creditRef || null,
+    photo_name: order.photoName || null,
+    photo_path: order.photoPath || null,
+    notes: order.notes || null,
+  };
+}
 
-  const { error } = await supabase
-    .from("orders")
-    .insert({
-      id,
-      sales_order_id: order.id,
-      order_date: order.date,
-      plate_number: order.plateNumber,
-      customer_name: order.customerName || null,
-      contact_number: order.contactNumber || null,
-      car_type: order.carType || null,
-      car_brand: order.carBrand || null,
-      worker_id: workerId,
-      worker_name: order.washerName || null,
-      manager: order.manager || null,
-      service_total: num(order.serviceTotal),
-      addon_total: num(order.addOnTotal),
-      cash: num(order.cash),
-      gcash: num(order.gcash),
-      credit: num(order.credit),
-      discount: num(order.discount),
-      payment_enabled: order.paymentEnabled || EMPTY_PAYMENT_ENABLED,
-      total: num(order.total),
-      total_paid: num(order.totalPaid),
-      balance: num(order.balance),
-      commission: num(order.commission),
-      commission_label: order.commissionLabel || null,
-      gcash_ref: order.gcashRef || null,
-      credit_ref: order.creditRef || null,
-      photo_name: order.photoName || null,
-      photo_path: order.photoPath || null,
-      notes: order.notes || null,
-    });
+function toServiceRows(order) {
+  return (order.services || [])
+    .filter((service) => service.category)
+    .map((service) => ({
+      category: service.category,
+      size: service.size || "",
+      price: num(service.price),
+      commission_type: service.commissionType || null,
+      commission_rate: num(service.commissionRate),
+    }));
+}
+
+// Add-on rows store their price, which only the caller's price list knows.
+function toAddOnRows(order) {
+  return (order.selectedAddOns || []).map((name) => ({
+    name,
+    price: num(order.addOnPrices?.[name]),
+  }));
+}
+
+/*
+ * The database numbers the sale and writes it together with its services and
+ * add-ons in one transaction (supabase/10_create_order.sql). Numbering it
+ * here could not work: a signed-out worker cannot read the day's orders, so
+ * every device started at 001 and collided on the unique sales_order_id.
+ */
+export async function createOrder(order) {
+  const { data, error } = await supabase.rpc("create_order", {
+    p_order: {
+      ...toOrderRow(order),
+      services: toServiceRows(order),
+      addons: toAddOnRows(order),
+    },
+  });
 
   if (error) throw error;
 
-  await insertOrderChildren(id, order);
-
-  // Built from what was just written rather than re-read, both because a
-  // signed-out worker may not select from orders and because it saves a
-  // round trip. addOnPrices is a lookup the caller passed in, not a field.
-  const saved = { ...order, dbId: id, createdAt: new Date().toISOString() };
+  // Built from what was sent rather than re-read, because a signed-out
+  // worker may not select from orders. addOnPrices is a lookup the caller
+  // passed in, not a field.
+  const saved = {
+    ...order,
+    id: data.sales_order_id,
+    dbId: data.id,
+    createdAt: data.created_at,
+  };
   delete saved.addOnPrices;
 
   return saved;
 }
 
-async function insertOrderChildren(orderId, order) {
-  const services = (order.services || []).filter((service) => service.category);
+/*
+ * Imported orders keep the sales order number and date the device gave them,
+ * so they bypass create_order and its numbering. Signed-in staff only.
+ */
+async function importOrder(order) {
+  const id = crypto.randomUUID();
+
+  const { error } = await supabase
+    .from("orders")
+    .insert({ id, sales_order_id: order.id, ...toOrderRow(order) });
+
+  if (error) throw error;
+
+  const services = toServiceRows(order).map((row) => ({ ...row, order_id: id }));
 
   if (services.length) {
-    const { error } = await supabase.from("order_services").insert(
-      services.map((service) => ({
-        order_id: orderId,
-        category: service.category,
-        size: service.size || "",
-        price: num(service.price),
-        commission_type: service.commissionType || null,
-        commission_rate: num(service.commissionRate),
-      }))
-    );
-    if (error) throw error;
+    const { error: serviceError } = await supabase
+      .from("order_services")
+      .insert(services);
+    if (serviceError) throw serviceError;
   }
 
-  const addOnNames = order.selectedAddOns || [];
+  const addOns = toAddOnRows(order).map((row) => ({ ...row, order_id: id }));
 
-  if (addOnNames.length) {
-    const { error } = await supabase.from("order_addons").insert(
-      addOnNames.map((name) => ({
-        order_id: orderId,
-        name,
-        price: num(order.addOnPrices?.[name]),
-      }))
-    );
-    if (error) throw error;
+  if (addOns.length) {
+    const { error: addOnError } = await supabase
+      .from("order_addons")
+      .insert(addOns);
+    if (addOnError) throw addOnError;
   }
 }
 
@@ -274,10 +304,16 @@ function toWorkerRow(worker) {
   };
 }
 
-export async function fetchWorkers() {
+// All a signed-out visitor needs for the worker dropdown and the commission
+// rule. supabase/11_limit_public_access.sql limits anon to these columns,
+// so asking anon for "*" would be refused.
+const PUBLIC_WORKER_COLUMNS =
+  "id, name, role, status, commission_mode, commission_value";
+
+export async function fetchWorkers({ publicOnly = false } = {}) {
   const { data, error } = await supabase
     .from("workers")
-    .select("*")
+    .select(publicOnly ? PUBLIC_WORKER_COLUMNS : "*")
     .order("name");
 
   if (error) throw error;
@@ -308,7 +344,7 @@ export async function updateWorker(workerId, worker) {
 }
 
 export async function deleteWorker(workerId) {
-  // Orders keep worker_name, so history survives a worker being removed.
+  // orders.worker_id is ON DELETE CASCADE (09), so the worker's sales go too.
   //
   // RLS reports success with zero rows affected when no policy grants the
   // delete, so the result has to be inspected. Otherwise the worker vanishes
@@ -639,7 +675,7 @@ export async function importLocalStorage(keys) {
   const localOrders = readJson(keys.orders);
 
   for (const order of localOrders) {
-    await createOrder({
+    await importOrder({
       ...order,
       workerId: workerIdMap[order.workerId] || null,
     });
