@@ -201,15 +201,17 @@ export const pricingData = [
   },
 ];
 
+// commissionRate is the worker's percentage of the add-on's price; 0 earns
+// nothing. Labor Only's price is a default the worker overrides per sale.
 export const addOns = [
-  { name: "Premium Shampoo", price: 50 },
-  { name: "Mr Pink", price: 100 },
-  { name: "Wheel Decontamination", price: 1000 },
-  { name: "Clay", price: 200 },
-  { name: "Spray", price: 200 },
-  { name: "Machine", price: 500 },
-  { name: "Back to Zero", price: 500 },
-  { name: "Labor Only", price: 0 },
+  { name: "Premium Shampoo", price: 50, commissionRate: 0 },
+  { name: "Mr Pink", price: 100, commissionRate: 0 },
+  { name: "Wheel Decontamination", price: 1000, commissionRate: 12 },
+  { name: "Clay", price: 200, commissionRate: 0 },
+  { name: "Spray", price: 200, commissionRate: 30 },
+  { name: "Machine", price: 500, commissionRate: 30 },
+  { name: "Back to Zero", price: 500, commissionRate: 12 },
+  { name: "Labor Only", price: 0, commissionRate: 12, workerSetsPrice: true },
 ];
 
 

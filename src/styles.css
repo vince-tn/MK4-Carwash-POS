@@ -1646,3 +1646,36 @@ td {
 .table-action-btn.danger:hover {
   background: #7f1d1d;
 }
+
+/* --- Add-on commissions and worker-priced labor --- */
+
+.addon:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.labor-fields {
+  padding: 14px 0 0;
+}
+
+/* A fixed last column, so the header (empty there) lines up with rows that
+   end in a Remove button. */
+.price-item-row.addon-row {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) 88px;
+}
+
+@media (max-width: 700px) {
+  .price-item-row.addon-row {
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.9fr) minmax(0, 0.8fr) 88px;
+  }
+}
+
+.record-detail .commission-line {
+  font-size: 0.78rem;
+  color: #6b7280;
+}
+
+.record-detail dt.commission-line {
+  padding-left: 12px;
+  white-space: normal;
+}

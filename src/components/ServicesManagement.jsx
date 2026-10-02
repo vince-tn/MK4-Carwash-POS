@@ -174,6 +174,8 @@ export default function ServicesManagement({ pricing, onUpdatePricing }) {
             addOns.map((addOn) => addOn.name)
           ),
           price: 0,
+          commissionRate: 0,
+          workerSetsPrice: false,
         },
       ],
     });
@@ -401,14 +403,15 @@ export default function ServicesManagement({ pricing, onUpdatePricing }) {
             <p className="empty">No add-ons yet.</p>
           ) : (
             <>
-              <div className="price-item-row price-item-head">
+              <div className="price-item-row addon-row price-item-head">
                 <span>Add-on Name</span>
                 <span>Price (₱)</span>
+                <span>Commission (%)</span>
                 <span />
               </div>
 
               {addOns.map((addOn) => (
-                <div className="price-item-row" key={addOn.id}>
+                <div className="price-item-row addon-row" key={addOn.id}>
                   <input
                     value={addOn.name}
                     onChange={(e) =>
@@ -428,6 +431,25 @@ export default function ServicesManagement({ pricing, onUpdatePricing }) {
                       })
                     }
                     placeholder="0"
+                    title={
+                      addOn.workerSetsPrice
+                        ? "Default only: workers enter their own amount for each sale"
+                        : undefined
+                    }
+                  />
+
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={addOn.commissionRate ?? 0}
+                    onChange={(e) =>
+                      updateAddOn(addOn.id, {
+                        commissionRate:
+                          e.target.value === "" ? "" : Number(e.target.value),
+                      })
+                    }
+                    placeholder="0"
                   />
 
                   <button
@@ -439,6 +461,16 @@ export default function ServicesManagement({ pricing, onUpdatePricing }) {
                   </button>
                 </div>
               ))}
+
+              <p className="field-hint">
+                Commission is the worker&apos;s percentage of the add-on&apos;s
+                price, added to their service commission; 0% earns nothing.
+                {addOns.some((addOn) => addOn.workerSetsPrice) &&
+                  ` ${addOns
+                    .filter((addOn) => addOn.workerSetsPrice)
+                    .map((addOn) => addOn.name)
+                    .join(", ")}: the price is a default; workers type the actual amount and the labor done for each sale.`}
+              </p>
             </>
           )}
         </div>

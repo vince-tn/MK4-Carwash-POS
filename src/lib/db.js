@@ -17,8 +17,10 @@ const ORDER_SELECT = `
   total, total_paid, balance, commission, commission_label,
   gcash_ref, credit_ref, reference_no, payment_notes, payment_updated_at,
   photo_name, photo_path, notes, created_at,
-  order_services ( id, category, size, price, commission_type, commission_rate ),
-  order_addons ( id, name, price )
+  order_services (
+    id, category, size, price, commission_type, commission_rate, commission
+  ),
+  order_addons ( id, name, price, commission_rate, commission, details )
 `;
 
 const EMPTY_PAYMENT_ENABLED = {
@@ -30,6 +32,14 @@ const EMPTY_PAYMENT_ENABLED = {
 
 function num(value) {
   return Number(value) || 0;
+}
+
+// Per-line commission is null on sales recorded before it was stored (13),
+// and that null is how Sales Records knows to show only the total.
+function numOrNull(value) {
+  return value === null || value === undefined || value === ""
+    ? null
+    : Number(value) || 0;
 }
 
 /* ------------------------------------------------------------------ orders */
@@ -54,8 +64,17 @@ function toAppOrder(row) {
       price: num(service.price),
       commissionType: service.commission_type || "",
       commissionRate: num(service.commission_rate),
+      commission: numOrNull(service.commission),
     })),
     selectedAddOns: (row.order_addons || []).map((addOn) => addOn.name),
+    addOnLines: (row.order_addons || []).map((addOn) => ({
+      id: addOn.id,
+      name: addOn.name,
+      price: num(addOn.price),
+      commissionRate: numOrNull(addOn.commission_rate),
+      commission: numOrNull(addOn.commission),
+      details: addOn.details || "",
+    })),
     paymentEnabled: row.payment_enabled || { ...EMPTY_PAYMENT_ENABLED },
     cash: row.cash ?? "",
     gcash: row.gcash ?? "",
@@ -160,11 +179,27 @@ function toServiceRows(order) {
       price: num(service.price),
       commission_type: service.commissionType || null,
       commission_rate: num(service.commissionRate),
+      commission: numOrNull(service.commission),
     }));
 }
 
-// Add-on rows store their price, which only the caller's price list knows.
+/*
+ * The Worker Form hands over addOnLines: each add-on with the price charged
+ * (the worker's own amount for Labor Only), its commission and any labor
+ * description. Orders from the localStorage import have only names, so their
+ * prices come from the caller's price list as before.
+ */
 function toAddOnRows(order) {
+  if (order.addOnLines) {
+    return order.addOnLines.map((line) => ({
+      name: line.name,
+      price: num(line.price),
+      commission_rate: numOrNull(line.commissionRate),
+      commission: numOrNull(line.commission),
+      details: line.details || null,
+    }));
+  }
+
   return (order.selectedAddOns || []).map((name) => ({
     name,
     price: num(order.addOnPrices?.[name]),
@@ -468,6 +503,8 @@ export async function fetchPricing() {
       id: addOn.id,
       name: addOn.name,
       price: num(addOn.price),
+      commissionRate: num(addOn.commission_rate),
+      workerSetsPrice: Boolean(addOn.worker_sets_price),
     })),
   };
 }
@@ -535,6 +572,8 @@ export async function savePricing(pricing, previous) {
     id: addOn.id,
     name: addOn.name || "Untitled",
     price: num(addOn.price),
+    commission_rate: num(addOn.commissionRate),
+    worker_sets_price: Boolean(addOn.workerSetsPrice),
     sort_order: index,
   }));
 
@@ -667,6 +706,8 @@ export async function seedPricing(defaultPricing) {
         id: addOn.id,
         name: addOn.name,
         price: num(addOn.price),
+        commission_rate: num(addOn.commissionRate),
+        worker_sets_price: Boolean(addOn.workerSetsPrice),
         sort_order: index,
       }))
     );

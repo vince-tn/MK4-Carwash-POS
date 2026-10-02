@@ -22,7 +22,21 @@ function createBlankService(pricingData) {
   };
 }
 
-function calculateCommission({ services, worker, commissionSettings }) {
+// Each line is rounded to the centavo, so the breakdown in Sales Records adds
+// up exactly to the total.
+function centavos(amount) {
+  return Math.round(amount * 100) / 100;
+}
+
+/*
+ * The worker's rule (their own, or the global one) decides the commission on
+ * services. Add-ons are separate: each earns its own percentage of its price,
+ * on top of the service commission, whatever the worker's rule.
+ *
+ * serviceCommissions lines up with services. Under "flat per order" every
+ * service line is 0 and the flat amount belongs to the order as a whole.
+ */
+function calculateCommission({ services, addOnLines, worker, commissionSettings }) {
   const workerMode = worker?.commissionMode || "inherit";
   const mode =
     workerMode === "inherit"
@@ -36,41 +50,45 @@ function calculateCommission({ services, worker, commissionSettings }) {
 
   const value = Number(rawValue) || 0;
 
+  let perService;
+  let perOrder = 0;
+  let label;
+
   if (mode === "flat_per_order") {
-    return {
-      commission: value,
-      label: `Flat per order: ${peso.format(value)}`,
-    };
+    perService = () => 0;
+    perOrder = value;
+    label = `Flat per order: ${peso.format(value)}`;
+  } else if (mode === "flat_per_service") {
+    perService = () => value;
+    label = `Flat per service: ${peso.format(value)}`;
+  } else if (mode === "custom_percent") {
+    perService = (service) => Number(service.price || 0) * (value / 100);
+    label = `Custom percentage: ${value}%`;
+  } else {
+    perService = (service) =>
+      Number(service.price || 0) * (Number(service.commissionRate || 0) / 100);
+    label = "Service percentage";
   }
 
-  if (mode === "flat_per_service") {
-    return {
-      commission: services.length * value,
-      label: `Flat per service: ${peso.format(value)}`,
-    };
-  }
+  const serviceCommissions = services.map((service) =>
+    centavos(perService(service))
+  );
 
-  if (mode === "custom_percent") {
-    const serviceTotal = services.reduce(
-      (sum, service) => sum + Number(service.price || 0),
-      0
-    );
+  const addOnCommission = addOnLines.reduce(
+    (sum, line) => sum + line.commission,
+    0
+  );
 
-    return {
-      commission: serviceTotal * (value / 100),
-      label: `Custom percentage: ${value}%`,
-    };
-  }
-
-  const servicePercentageCommission = services.reduce((sum, service) => {
-    return (
-      sum + Number(service.price || 0) * (Number(service.commissionRate || 0) / 100)
-    );
-  }, 0);
+  const commission = centavos(
+    serviceCommissions.reduce((sum, amount) => sum + amount, 0) +
+      perOrder +
+      addOnCommission
+  );
 
   return {
-    commission: servicePercentageCommission,
-    label: "Service percentage",
+    commission,
+    label: addOnCommission > 0 ? `${label} + add-ons` : label,
+    serviceCommissions,
   };
 }
 
@@ -94,6 +112,8 @@ export default function WorkerForm({
     manager: "",
     services: [createBlankService(pricingData)],
     selectedAddOns: [],
+    laborDetails: "",
+    laborAmount: "",
     paymentEnabled: {
       cash: false,
       gcash: false,
@@ -165,12 +185,34 @@ export default function WorkerForm({
     );
   }, [form.services]);
 
-  const addOnTotal = useMemo(() => {
-    return form.selectedAddOns.reduce((sum, addOnName) => {
-      const addOn = addOns.find((item) => item.name === addOnName);
-      return sum + (Number(addOn?.price) || 0);
-    }, 0);
-  }, [form.selectedAddOns, addOns]);
+  // The chosen worker-priced add-on (Labor Only), if any. While it is chosen
+  // it is the only add-on: the others are cleared and locked.
+  const laborAddOn = form.selectedAddOns
+    .map((name) => addOns.find((item) => item.name === name))
+    .find((addOn) => addOn?.workerSetsPrice);
+
+  // Each chosen add-on as it will be charged: Labor Only at the worker's
+  // amount, everything else at the price list's.
+  const addOnLines = useMemo(() => {
+    return form.selectedAddOns.map((name) => {
+      const addOn = addOns.find((item) => item.name === name);
+      const isLabor = Boolean(addOn?.workerSetsPrice);
+      const price = isLabor
+        ? Number(form.laborAmount) || 0
+        : Number(addOn?.price) || 0;
+      const commissionRate = Number(addOn?.commissionRate) || 0;
+
+      return {
+        name,
+        price,
+        commissionRate,
+        commission: centavos(price * (commissionRate / 100)),
+        details: isLabor ? form.laborDetails.trim() : "",
+      };
+    });
+  }, [form.selectedAddOns, form.laborAmount, form.laborDetails, addOns]);
+
+  const addOnTotal = addOnLines.reduce((sum, line) => sum + line.price, 0);
 
   const discount = form.paymentEnabled.discount ? Number(form.discount) || 0 : 0;
   const total = Math.max(serviceTotal + addOnTotal - discount, 0);
@@ -178,10 +220,11 @@ export default function WorkerForm({
   const commissionResult = useMemo(() => {
     return calculateCommission({
       services: form.services,
+      addOnLines,
       worker: selectedWorker,
       commissionSettings,
     });
-  }, [form.services, selectedWorker, commissionSettings]);
+  }, [form.services, addOnLines, selectedWorker, commissionSettings]);
 
   const commission = commissionResult.commission;
 
@@ -287,15 +330,30 @@ export default function WorkerForm({
   }
 
   function toggleAddOn(name) {
+    const addOn = addOns.find((item) => item.name === name);
+
     setForm((prev) => {
       const exists = prev.selectedAddOns.includes(name);
 
-      return {
-        ...prev,
-        selectedAddOns: exists
-          ? prev.selectedAddOns.filter((item) => item !== name)
-          : [...prev.selectedAddOns, name],
-      };
+      if (exists) {
+        return {
+          ...prev,
+          selectedAddOns: prev.selectedAddOns.filter((item) => item !== name),
+          ...(addOn?.workerSetsPrice ? { laborDetails: "", laborAmount: "" } : {}),
+        };
+      }
+
+      // Labor Only stands alone: choosing it clears the other add-ons, and
+      // its amount starts at the admin's default for the worker to change.
+      if (addOn?.workerSetsPrice) {
+        return {
+          ...prev,
+          selectedAddOns: [name],
+          laborAmount: String(Number(addOn.price) || 0),
+        };
+      }
+
+      return { ...prev, selectedAddOns: [...prev.selectedAddOns, name] };
     });
   }
 
@@ -310,6 +368,8 @@ export default function WorkerForm({
       manager: "",
       services: [createBlankService(pricingData)],
       selectedAddOns: [],
+      laborDetails: "",
+      laborAmount: "",
       paymentEnabled: {
         cash: false,
         gcash: false,
@@ -341,6 +401,16 @@ export default function WorkerForm({
 
     if (!form.workerId) {
       alert("Please select a worker. Add workers in the Workers admin page.");
+      return;
+    }
+
+    if (laborAddOn && !form.laborDetails.trim()) {
+      alert(`Please describe the labor done for ${laborAddOn.name}.`);
+      return;
+    }
+
+    if (laborAddOn && String(form.laborAmount).trim() === "") {
+      alert(`Please enter the amount for ${laborAddOn.name}.`);
       return;
     }
 
@@ -381,6 +451,12 @@ export default function WorkerForm({
     // No id here: the database assigns the sales order number on save.
     const order = {
       ...form,
+      // Each line's commission is stored, for the breakdown in Sales Records.
+      services: form.services.map((service, index) => ({
+        ...service,
+        commission: commissionResult.serviceCommissions[index],
+      })),
+      addOnLines,
       photoPath,
       washerName: selectedWorker?.name || "Unknown Worker",
       serviceTotal,
@@ -605,22 +681,64 @@ export default function WorkerForm({
           <div className="addon-box">
             <p>Add-ons</p>
             <div className="addon-grid">
-              {addOns.map((addOn) => (
-                <button
-                  type="button"
-                  key={addOn.name}
-                  className={
-                    form.selectedAddOns.includes(addOn.name)
-                      ? "addon active"
-                      : "addon"
-                  }
-                  onClick={() => toggleAddOn(addOn.name)}
-                >
-                  {addOn.name}
-                  <span>{peso.format(Number(addOn.price) || 0)}</span>
-                </button>
-              ))}
+              {addOns.map((addOn) => {
+                const isSelected = form.selectedAddOns.includes(addOn.name);
+                const shownPrice =
+                  isSelected && addOn.workerSetsPrice
+                    ? Number(form.laborAmount) || 0
+                    : Number(addOn.price) || 0;
+
+                return (
+                  <button
+                    type="button"
+                    key={addOn.name}
+                    className={isSelected ? "addon active" : "addon"}
+                    onClick={() => toggleAddOn(addOn.name)}
+                    disabled={Boolean(laborAddOn) && !isSelected}
+                    title={
+                      laborAddOn && !isSelected
+                        ? `Unavailable while ${laborAddOn.name} is selected`
+                        : undefined
+                    }
+                  >
+                    {addOn.name}
+                    <span>{peso.format(shownPrice)}</span>
+                  </button>
+                );
+              })}
             </div>
+
+            {laborAddOn && (
+              <div className="form-grid labor-fields">
+                <label className="wide-field">
+                  Labor Done
+                  <input
+                    type="text"
+                    placeholder="Describe the labor done"
+                    value={form.laborDetails}
+                    onChange={(e) => updateField("laborDetails", e.target.value)}
+                  />
+                </label>
+
+                <label>
+                  Labor Amount
+                  <input
+                    type="number"
+                    min="0"
+                    value={form.laborAmount}
+                    onChange={(e) => updateField("laborAmount", e.target.value)}
+                  />
+                  <small className="field-hint">
+                    Default {peso.format(Number(laborAddOn.price) || 0)}.
+                    Commission {Number(laborAddOn.commissionRate) || 0}%:{" "}
+                    {peso.format(
+                      addOnLines.find((line) => line.name === laborAddOn.name)
+                        ?.commission || 0
+                    )}
+                  </small>
+                </label>
+              </div>
+            )}
           </div>
         </details>
 

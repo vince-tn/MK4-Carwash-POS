@@ -38,6 +38,56 @@ async function openProof(order) {
   window.open(data.signedUrl, "_blank", "noopener");
 }
 
+// An order's add-ons with what was charged. Orders that only carry names
+// (from the localStorage import) fall back to the name alone.
+function addOnLinesOf(order) {
+  return (
+    order.addOnLines ||
+    (order.selectedAddOns || []).map((name) => ({ name, price: null }))
+  );
+}
+
+function addOnLabel(line) {
+  return line.details ? `${line.name}: ${line.details}` : line.name;
+}
+
+/*
+ * The commission behind the total: each service, any flat per-order amount,
+ * and each add-on. Sales recorded before per-line commission was stored have
+ * no lines, and show their total only, as they always did.
+ */
+function commissionBreakdown(order) {
+  const services = (order.services || []).filter(
+    (service) => service.commission !== null && service.commission !== undefined
+  );
+  const addOns = addOnLinesOf(order).filter(
+    (line) => line.commission !== null && line.commission !== undefined
+  );
+
+  if (!services.length && !addOns.length) return [];
+
+  const lineTotal =
+    services.reduce((sum, service) => sum + Number(service.commission), 0) +
+    addOns.reduce((sum, line) => sum + Number(line.commission), 0);
+  const perOrder = Math.round((Number(order.commission || 0) - lineTotal) * 100) / 100;
+
+  return [
+    ...services.map((service) => ({
+      key: `service-${service.id}`,
+      label: `${service.category} - ${service.size}`,
+      amount: Number(service.commission),
+    })),
+    ...(perOrder > 0
+      ? [{ key: "per-order", label: "Per sales order", amount: perOrder }]
+      : []),
+    ...addOns.map((line, index) => ({
+      key: `addon-${line.id || index}`,
+      label: `${addOnLabel(line)} (${Number(line.commissionRate) || 0}%)`,
+      amount: Number(line.commission),
+    })),
+  ].filter((line) => line.amount > 0);
+}
+
 function getPaymentMethods(order) {
   const methods = [];
 
@@ -493,7 +543,7 @@ export default function SalesRecords({
         order.washerName,
         order.manager,
         services,
-        order.selectedAddOns?.join(" | "),
+        addOnLinesOf(order).map(addOnLabel).join(" | "),
         order.serviceTotal,
         order.addOnTotal,
         order.paymentEnabled?.cash ? order.cash : "",
@@ -821,10 +871,14 @@ export default function SalesRecords({
                                   <dd>{peso.format(service.price)}</dd>
                                 </Fragment>
                               ))}
-                              {(order.selectedAddOns || []).map((name) => (
-                                <Fragment key={name}>
-                                  <dt>{name}</dt>
-                                  <dd>add-on</dd>
+                              {addOnLinesOf(order).map((line, index) => (
+                                <Fragment key={line.id || `${line.name}-${index}`}>
+                                  <dt>{addOnLabel(line)}</dt>
+                                  <dd>
+                                    {line.price === null || line.price === undefined
+                                      ? "add-on"
+                                      : peso.format(line.price)}
+                                  </dd>
                                 </Fragment>
                               ))}
                               <dt>Service Total</dt>
@@ -852,6 +906,16 @@ export default function SalesRecords({
                                   ? ` (${order.commissionLabel})`
                                   : ""}
                               </dd>
+                              {commissionBreakdown(order).map((line) => (
+                                <Fragment key={line.key}>
+                                  <dt className="commission-line">
+                                    {line.label}
+                                  </dt>
+                                  <dd className="commission-line">
+                                    {peso.format(line.amount)}
+                                  </dd>
+                                </Fragment>
+                              ))}
                             </dl>
                           </div>
 
