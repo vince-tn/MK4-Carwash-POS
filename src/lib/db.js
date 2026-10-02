@@ -89,10 +89,12 @@ export async function fetchOrders() {
   const rows = [];
 
   for (let from = 0; ; from += PAGE_SIZE) {
+    // id breaks ties, so the order of rows across pages is fixed.
     const { data, error } = await supabase
       .from("orders")
       .select(ORDER_SELECT)
       .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
       .range(from, from + PAGE_SIZE - 1);
 
     if (error) throw error;
@@ -102,7 +104,12 @@ export async function fetchOrders() {
     if (!data || data.length < PAGE_SIZE) break;
   }
 
-  return rows.map(toAppOrder);
+  // A sale recorded while the pages are being read pushes every later row
+  // down one place, so the last order of one page comes back again at the top
+  // of the next. Keep one copy of each, or it is counted twice in every total.
+  const unique = new Map(rows.map((row) => [row.id, row]));
+
+  return [...unique.values()].map(toAppOrder);
 }
 
 function toOrderRow(order) {

@@ -1,0 +1,91 @@
+name: Supabase Backup
+
+# The free plan has no backups. A mistaken delete cannot be undone, and
+# deleting a worker deletes every sale recorded against them. This dumps the
+# database once a day, encrypts it, and keeps it as a workflow artifact for
+# 30 days, so there is always a recent copy to restore from.
+#
+# The dump holds customer names, phone numbers and plate numbers, and the
+# artifacts of a public repository can be downloaded by anyone signed in to
+# GitHub. So the dump is encrypted with a passphrase before it is uploaded.
+#
+# Setup: add two repo secrets (Settings -> Secrets and variables -> Actions):
+#   SUPABASE_DB_URL    The "Session pooler" connection string from the
+#                      Supabase dashboard (Connect -> Session pooler), with
+#                      the database password filled in. Not the "Direct
+#                      connection": on the free plan that one is IPv6 only,
+#                      and GitHub's runners cannot reach it.
+#   BACKUP_PASSPHRASE  A long random passphrase. Keep a copy somewhere safe:
+#                      without it no backup can be opened.
+# Until both exist, each run skips with a warning instead of failing.
+#
+# Not covered: payment proof images, which are files in Storage, not rows.
+#
+# To restore, download the artifact from a run's Summary page, then:
+#   gpg --decrypt mk4-backup-<date>.tar.gz.gpg | tar xz
+#   psql --single-transaction --variable ON_ERROR_STOP=1 \
+#     --file roles.sql --file schema.sql \
+#     --command 'SET session_replication_role = replica' \
+#     --file data.sql --dbname "<connection string of the target project>"
+
+on:
+  schedule:
+    # 17:41 UTC is 01:41 in Manila, after closing. Off the hour because
+    # GitHub queues :00 jobs the longest.
+    - cron: "41 17 * * *"
+  workflow_dispatch: # lets you run it by hand from the Actions tab
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+    steps:
+      - name: Check secrets are configured
+        id: secrets
+        run: |
+          if [ -z "${SUPABASE_DB_URL:-}" ] || [ -z "${BACKUP_PASSPHRASE:-}" ]; then
+            echo "::warning::No backup taken. Add the SUPABASE_DB_URL and BACKUP_PASSPHRASE repo secrets to turn backups on."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: supabase/setup-cli@v1
+        if: steps.secrets.outputs.configured == 'true'
+        with:
+          version: latest
+
+      - name: Dump roles, schema and data
+        if: steps.secrets.outputs.configured == 'true'
+        run: |
+          set -euo pipefail
+          mkdir backup
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f backup/roles.sql --role-only
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f backup/schema.sql
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f backup/data.sql --data-only --use-copy
+          ls -l backup
+
+      - name: Encrypt
+        if: steps.secrets.outputs.configured == 'true'
+        run: |
+          set -euo pipefail
+          name="mk4-backup-$(date -u +%Y-%m-%d)"
+          tar czf "$name.tar.gz" -C backup .
+          # Passphrase on stdin, so it never appears in a command line.
+          printf '%s' "$BACKUP_PASSPHRASE" | gpg --batch --yes \
+            --pinentry-mode loopback --passphrase-fd 0 \
+            --symmetric --cipher-algo AES256 \
+            --output "$name.tar.gz.gpg" "$name.tar.gz"
+          rm -rf backup "$name.tar.gz"
+          echo "ARCHIVE=$name.tar.gz.gpg" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        if: steps.secrets.outputs.configured == 'true'
+        with:
+          name: ${{ env.ARCHIVE }}
+          path: ${{ env.ARCHIVE }}
+          retention-days: 30
+          if-no-files-found: error

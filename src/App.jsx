@@ -83,6 +83,13 @@ export default function App() {
   // from a price list that simply has not finished loading.
   const savedPricingIds = useRef(null);
 
+  // The price list and commission rule last known to match the database.
+  // Loading sets them, so a load is not written straight back: before this,
+  // every admin page load rewrote all 112 price rows and the commission rule
+  // unchanged. Only an edit on the Services or Workers page is saved.
+  const storedPricing = useRef(null);
+  const storedCommission = useRef(null);
+
   // idle (signed out) | loading | ready | error
   const [dataState, setDataState] = useState("idle");
   const [dataError, setDataError] = useState("");
@@ -134,6 +141,8 @@ export default function App() {
         setWorkers(nextWorkers);
         setCommissionSettings(nextCommission);
         setPricing(nextPricing);
+        storedCommission.current = nextCommission;
+        storedPricing.current = nextPricing;
         savedPricingIds.current = db.collectPricingIds(nextPricing);
         setDataState("ready");
         setImportOffer(
@@ -154,11 +163,13 @@ export default function App() {
   // The Services page reports every keystroke, so writes are debounced.
   useEffect(() => {
     if (!session || dataState !== "ready") return undefined;
+    if (pricing === storedPricing.current) return undefined;
 
     const timer = setTimeout(() => {
       db
         .savePricing(pricing, savedPricingIds.current)
         .then(() => {
+          storedPricing.current = pricing;
           savedPricingIds.current = db.collectPricingIds(pricing);
           setSaveError("");
         })
@@ -173,11 +184,15 @@ export default function App() {
 
   useEffect(() => {
     if (!session || dataState !== "ready") return undefined;
+    if (commissionSettings === storedCommission.current) return undefined;
 
     const timer = setTimeout(() => {
       db
         .saveCommissionSettings(commissionSettings)
-        .then(() => setSaveError(""))
+        .then(() => {
+          storedCommission.current = commissionSettings;
+          setSaveError("");
+        })
         .catch((error) => {
           console.error("Could not save commission settings", error);
           setSaveError(`Commission settings not saved: ${error.message}`);

@@ -117,9 +117,10 @@ export default function WorkerForm({
   const selectedWorker = workers.find((worker) => worker.id === form.workerId);
 
   // Payment proofs are phone photos or screenshots, typically 2-5 MB raw.
-  // They are re-encoded as JPEG of about 100 KB, which keeps a GCash or bank
-  // screenshot readable and makes the 1 GB storage quota last about three
-  // times longer than the old 300 KB. Everything becomes JPEG because a PNG
+  // They are re-encoded as JPEG of at most 50 KB, about six times smaller
+  // than the old 300 KB, so the 1 GB storage quota lasts six times longer.
+  // Tested on a bank-style screenshot: the reference number, amount, date and
+  // even 28 px fine print stay legible. Everything becomes JPEG because a PNG
   // screenshot can only get under a size cap by shrinking until the text
   // blurs.
   async function handleProofSelect(e) {
@@ -136,7 +137,7 @@ export default function WorkerForm({
 
     try {
       const compressed = await imageCompression(file, {
-        maxSizeMB: 0.1,
+        maxSizeMB: 0.05,
         maxWidthOrHeight: 1280,
         fileType: "image/jpeg",
         initialQuality: 0.75,
