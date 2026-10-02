@@ -273,6 +273,23 @@ export async function deleteOrder(dbId) {
   }
 }
 
+/*
+ * Deletes payment proof images, a thousand per request (the storage API's
+ * limit). Called after the sales they belong to are deleted: until now a
+ * deleted sale left its image behind, quietly using up the 1 GB quota.
+ */
+export async function removeProofs(paths) {
+  const unique = [...new Set(paths.filter(Boolean))];
+
+  for (let start = 0; start < unique.length; start += 1000) {
+    const { error } = await supabase.storage
+      .from("payment-proofs")
+      .remove(unique.slice(start, start + 1000));
+
+    if (error) throw error;
+  }
+}
+
 /* ----------------------------------------------------------------- workers */
 
 function toAppWorker(row) {

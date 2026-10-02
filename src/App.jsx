@@ -348,6 +348,7 @@ export default function App() {
       (sum, order) => sum + Number(order.total || 0),
       0
     );
+    const proofCount = theirOrders.filter((order) => order.photoPath).length;
 
     setPendingDelete({
       kind: "worker",
@@ -360,8 +361,11 @@ export default function App() {
         ? [
             `${theirOrders.length} sales order(s) will be deleted`,
             `${peso.format(takings)} of recorded sales will be removed`,
+            proofCount
+              ? `${proofCount} payment proof image(s) will be deleted`
+              : null,
             "To keep the history instead, cancel and set them to Inactive",
-          ]
+          ].filter(Boolean)
         : [],
       confirmLabel: "Delete worker",
     });
@@ -383,6 +387,7 @@ export default function App() {
           Number(order.totalPaid || 0)
         )} paid`,
         order.washerName ? `Recorded by ${order.washerName}` : null,
+        order.photoPath ? "Its payment proof image is deleted too" : null,
       ].filter(Boolean),
       confirmLabel: "Delete sale",
     });
@@ -393,8 +398,14 @@ export default function App() {
 
     setIsDeleting(true);
 
+    let proofPaths;
+
     try {
       if (pendingDelete.kind === "worker") {
+        proofPaths = orders
+          .filter((order) => order.workerId === pendingDelete.id)
+          .map((order) => order.photoPath);
+
         await db.deleteWorker(pendingDelete.id);
         setWorkers((prev) =>
           prev.filter((worker) => worker.id !== pendingDelete.id)
@@ -405,6 +416,8 @@ export default function App() {
         );
       } else {
         const order = orders.find((item) => item.id === pendingDelete.id);
+        proofPaths = [order.photoPath];
+
         await db.deleteOrder(order.dbId);
         setOrders((prev) =>
           prev.filter((item) => item.id !== pendingDelete.id)
@@ -415,6 +428,16 @@ export default function App() {
     } catch (error) {
       console.error("Could not complete the delete", error);
       alert(`Could not delete that: ${error.message}`);
+      setIsDeleting(false);
+      return;
+    }
+
+    // The sales are already gone, so a proof that fails to delete only costs
+    // storage. Logged rather than reported as a failed delete.
+    try {
+      await db.removeProofs(proofPaths);
+    } catch (error) {
+      console.error("Could not delete the payment proof images", error);
     } finally {
       setIsDeleting(false);
     }

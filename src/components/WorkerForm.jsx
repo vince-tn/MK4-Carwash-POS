@@ -116,8 +116,12 @@ export default function WorkerForm({
 
   const selectedWorker = workers.find((worker) => worker.id === form.workerId);
 
-  // Payment proofs are phone photos, typically 2-5 MB raw. Compress to roughly
-  // 300 KB before upload so the Supabase storage quota is not burned through.
+  // Payment proofs are phone photos or screenshots, typically 2-5 MB raw.
+  // They are re-encoded as JPEG of about 100 KB, which keeps a GCash or bank
+  // screenshot readable and makes the 1 GB storage quota last about three
+  // times longer than the old 300 KB. Everything becomes JPEG because a PNG
+  // screenshot can only get under a size cap by shrinking until the text
+  // blurs.
   async function handleProofSelect(e) {
     const file = e.target.files?.[0];
 
@@ -132,8 +136,10 @@ export default function WorkerForm({
 
     try {
       const compressed = await imageCompression(file, {
-        maxSizeMB: 0.3,
+        maxSizeMB: 0.1,
         maxWidthOrHeight: 1280,
+        fileType: "image/jpeg",
+        initialQuality: 0.75,
         useWebWorker: true,
       });
 
@@ -342,8 +348,7 @@ export default function WorkerForm({
     if (proofFile) {
       setProofStatus("Uploading proof...");
 
-      const extension = proofFile.type === "image/png" ? "png" : "jpg";
-      const objectPath = `${form.date}/${crypto.randomUUID()}.${extension}`;
+      const objectPath = `${form.date}/${crypto.randomUUID()}.jpg`;
 
       const { error: uploadError } = await supabase.storage
         .from("payment-proofs")
