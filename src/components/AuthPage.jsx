@@ -46,8 +46,8 @@ export default function AuthPage({ onLoginSuccess }) {
         <h2>MK4 Auto Care Login</h2>
 
         <p>
-          Sales records, reports, worker profiles and pricing require a
-          signed-in account. Recording a sale on the Worker Form does not.
+          Log in with your own account. Workers see the Worker Form; admins
+          and secretaries see the records and settings their role allows.
         </p>
 
         <form onSubmit={handleSubmit} className="auth-form">

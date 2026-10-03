@@ -21,6 +21,7 @@ import AuthPage from "./components/AuthPage";
 import ConfirmModal from "./components/ConfirmModal";
 import { buildDefaultPricing } from "./data/pricing";
 import * as db from "./lib/db";
+import { accessFor, ROLE_LABELS } from "./lib/access";
 
 // Only kept so a device that still holds records from before the database
 // cutover can hand them over once; see the import banner below.
@@ -35,7 +36,7 @@ const LOCAL_KEYS = {
 const INITIAL_WORKERS = [
   {
     name: "Millet",
-    role: "Manager",
+    role: "Admin",
     status: "Active",
     commissionMode: "inherit",
     commissionValue: 0,
@@ -43,7 +44,7 @@ const INITIAL_WORKERS = [
   },
   {
     name: "Angelica",
-    role: "Washer",
+    role: "Worker",
     status: "Active",
     commissionMode: "inherit",
     commissionValue: 0,
@@ -61,10 +62,33 @@ const defaultCommissionSettings = {
   globalValue: "100",
 };
 
+const EMPTY_PRICING = { categories: [], addOns: [] };
+
+// Sidebar order. Each login sees the entries its role allows (lib/access).
+const NAV = [
+  { page: "form", label: "Worker Form", icon: ClipboardList },
+  { page: "dashboard", label: "Admin Dashboard", icon: LayoutDashboard },
+  { page: "records", label: "Sales Records", icon: BarChart3 },
+  { page: "workers", label: "Employees", icon: UsersRound },
+  { page: "services", label: "Services", icon: Droplets },
+  { page: "login", label: "Login", icon: LogIn },
+];
+
+const PAGE_TITLES = {
+  form: "Worker Carwash Entry",
+  dashboard: "Admin Analytics Dashboard",
+  records: "Sales Order Records",
+  workers: "Employees and Commission",
+  services: "Services and Pricing",
+  login: "Staff Login",
+};
+
 
 
 export default function App() {
-  const [activePage, setActivePage] = useState("form");
+  // The page asked for. What is shown is this if the login may open it, or
+  // its role's home page otherwise (see currentPage below).
+  const [activePage, setActivePage] = useState(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [session, setSession] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -73,7 +97,11 @@ export default function App() {
   const [commissionSettings, setCommissionSettings] = useState(
     defaultCommissionSettings
   );
-  const [pricing, setPricing] = useState({ categories: [], addOns: [] });
+  const [pricing, setPricing] = useState(EMPTY_PRICING);
+
+  // Who is signed in and what they may open, tagged with the session it was
+  // loaded for, so a fresh login never runs on the previous visitor's access.
+  const [accessState, setAccessState] = useState({ key: null, access: null });
 
   // Strict Mode runs effects twice in development, and the second run would
   // seed a second price list with freshly generated ids. Load once per session.
@@ -86,7 +114,7 @@ export default function App() {
   // The price list and commission rule last known to match the database.
   // Loading sets them, so a load is not written straight back: before this,
   // every admin page load rewrote all 112 price rows and the commission rule
-  // unchanged. Only an edit on the Services or Workers page is saved.
+  // unchanged. Only an edit on the Services or Employees page is saved.
   const storedPricing = useRef(null);
   const storedCommission = useRef(null);
 
@@ -99,9 +127,9 @@ export default function App() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [importing, setImporting] = useState(false);
 
-  // The worker form is public, so the staff list, price list and commission
-  // rule load with or without a session. Orders are the one thing that needs
-  // one: a worker can record a sale but not read back the day's takings.
+  // Each login loads only what its role can open (lib/access). Before the
+  // roles migration, the public Worker Form still loads its staff list,
+  // price list and commission rule signed out.
   useEffect(() => {
     const sessionKey = session?.user?.id || "public";
 
@@ -119,9 +147,11 @@ export default function App() {
       setDataError("");
 
       try {
-        // Seeding writes, and only signed-in staff may write to these
-        // tables, so a public visit never attempts it.
-        if (session) {
+        const nextAccess = await db.fetchAccess();
+        const can = accessFor(nextAccess, Boolean(session));
+
+        // Seeding writes, which only an admin may do.
+        if (can.seed) {
           if (await db.isPricingEmpty()) {
             await db.seedPricing(buildDefaultPricing());
           }
@@ -129,14 +159,19 @@ export default function App() {
           await db.seedWorkers(INITIAL_WORKERS);
         }
 
-        const [nextWorkers, nextCommission, nextPricing] = await Promise.all([
-          db.fetchWorkers({ publicOnly: !session }),
-          db.fetchCommissionSettings(),
-          db.fetchPricing(),
-        ]);
+        const [nextWorkers, nextCommission, nextPricing, nextOrders] =
+          await Promise.all([
+            can.loadWorkers
+              ? db.fetchWorkers({ publicOnly: can.loadWorkers === "public" })
+              : [],
+            can.loadCommission
+              ? db.fetchCommissionSettings()
+              : defaultCommissionSettings,
+            can.loadPricing ? db.fetchPricing() : EMPTY_PRICING,
+            can.loadOrders ? db.fetchOrders() : [],
+          ]);
 
-        const nextOrders = session ? await db.fetchOrders() : [];
-
+        setAccessState({ key: sessionKey, access: nextAccess });
         setOrders(nextOrders);
         setWorkers(nextWorkers);
         setCommissionSettings(nextCommission);
@@ -146,7 +181,7 @@ export default function App() {
         savedPricingIds.current = db.collectPricingIds(nextPricing);
         setDataState("ready");
         setImportOffer(
-          Boolean(session) && !nextWorkers.length && db.hasLocalData(LOCAL_KEYS)
+          can.seed && !nextWorkers.length && db.hasLocalData(LOCAL_KEYS)
         );
       } catch (error) {
         console.error("Could not load data", error);
@@ -160,9 +195,16 @@ export default function App() {
     return undefined;
   }, [session]);
 
+  const isLoggedIn = Boolean(session);
+  const sessionKey = session?.user?.id || "public";
+  const access = accessState.key === sessionKey ? accessState.access : null;
+  const can = accessFor(access, isLoggedIn);
+  const currentPage = can.pages.includes(activePage) ? activePage : can.home;
+  const { editPricing, editCommission } = can;
+
   // The Services page reports every keystroke, so writes are debounced.
   useEffect(() => {
-    if (!session || dataState !== "ready") return undefined;
+    if (!editPricing || dataState !== "ready") return undefined;
     if (pricing === storedPricing.current) return undefined;
 
     const timer = setTimeout(() => {
@@ -180,10 +222,10 @@ export default function App() {
     }, 800);
 
     return () => clearTimeout(timer);
-  }, [pricing, dataState, session]);
+  }, [pricing, dataState, editPricing]);
 
   useEffect(() => {
-    if (!session || dataState !== "ready") return undefined;
+    if (!editCommission || dataState !== "ready") return undefined;
     if (commissionSettings === storedCommission.current) return undefined;
 
     const timer = setTimeout(() => {
@@ -200,7 +242,7 @@ export default function App() {
     }, 800);
 
     return () => clearTimeout(timer);
-  }, [commissionSettings, dataState, session]);
+  }, [commissionSettings, dataState, editCommission]);
 
   async function runImport() {
     setImporting(true);
@@ -239,11 +281,6 @@ export default function App() {
       if (isMounted) {
         setSession(data.session);
         setAuthChecked(true);
-
-        // If a session is restored while sitting on the Login page, move on
-        if (data.session) {
-          setActivePage((prev) => (prev === "login" ? "dashboard" : prev));
-        }
       }
     }
 
@@ -254,10 +291,6 @@ export default function App() {
     } = supabase.auth.onAuthStateChange((_event, currentSession) => {
       setSession(currentSession);
       setAuthChecked(true);
-
-      if (currentSession) {
-        setActivePage((prev) => (prev === "login" ? "dashboard" : prev));
-      }
     });
 
     return () => {
@@ -277,9 +310,9 @@ export default function App() {
 
     setOrders((prev) => [saved, ...prev]);
 
-    // A signed-out worker stays on the form for the next car; the dashboard
-    // would only show them the login card.
-    if (session) setActivePage("dashboard");
+    // Before roles, a signed-in user went on to the dashboard. A worker,
+    // signed in or not, stays on the form for the next car.
+    if (session && !access?.installed) setActivePage("dashboard");
 
     return saved;
   }
@@ -329,8 +362,8 @@ export default function App() {
       const saved = await db.createWorker(worker);
       setWorkers((prev) => [saved, ...prev]);
     } catch (error) {
-      console.error("Could not add the worker", error);
-      alert(`Could not add the worker: ${error.message}`);
+      console.error("Could not add the employee", error);
+      alert(`Could not add the employee: ${error.message}`);
     }
   }
 
@@ -347,8 +380,8 @@ export default function App() {
         prev.map((worker) => (worker.id === workerId ? saved : worker))
       );
     } catch (error) {
-      console.error("Could not update the worker", error);
-      alert(`Could not update the worker: ${error.message}`);
+      console.error("Could not update the employee", error);
+      alert(`Could not update the employee: ${error.message}`);
     }
   }
 
@@ -371,7 +404,7 @@ export default function App() {
       title: `Delete ${worker.name}?`,
       message: theirOrders.length
         ? `${worker.name} has sales recorded against them. Deleting this profile deletes those sales as well, and your totals for those days will change.`
-        : `${worker.name} has no sales recorded. Deleting the profile removes nothing else.`,
+        : `${worker.name} has no sales recorded. Deleting the employee removes nothing else.`,
       details: theirOrders.length
         ? [
             `${theirOrders.length} sales order(s) will be deleted`,
@@ -382,7 +415,7 @@ export default function App() {
             "To keep the history instead, cancel and set them to Inactive",
           ].filter(Boolean)
         : [],
-      confirmLabel: "Delete worker",
+      confirmLabel: "Delete employee",
     });
   }
 
@@ -458,16 +491,10 @@ export default function App() {
     }
   }
 
-  // The worker form is deliberately public: workers record sales without
-  // signing in. Everything that reads takings or changes settings is not.
-  const protectedPages = ["dashboard", "records", "workers", "services"];
-  const needsAuth = protectedPages.includes(activePage);
-  const isLoggedIn = Boolean(session);
-
   async function handleLogout() {
     await supabase.auth.signOut();
     setSession(null);
-    setActivePage("form");
+    setActivePage(null);
 
     // Do not leave another user's records on screen behind the login wall.
     setOrders([]);
@@ -545,64 +572,27 @@ export default function App() {
         </div>
 
         <nav>
-          <button
-            className={activePage === "form" ? "active" : ""}
-            onClick={() => goToPage("form")}
-            title="Worker Form"
-          >
-            <ClipboardList size={18} />
-            <span className="nav-label">Worker Form</span>
-          </button>
-
-          {isLoggedIn ? (
-            <>
+          {NAV.filter((item) => can.pages.includes(item.page)).map(
+            ({ page, label, icon: Icon }) => (
               <button
-                className={activePage === "dashboard" ? "active" : ""}
-                onClick={() => goToPage("dashboard")}
-                title="Admin Dashboard"
+                key={page}
+                className={currentPage === page ? "active" : ""}
+                onClick={() => goToPage(page)}
+                title={label}
               >
-                <LayoutDashboard size={18} />
-                <span className="nav-label">Admin Dashboard</span>
+                <Icon size={18} />
+                <span className="nav-label">{label}</span>
               </button>
-
-              <button
-                className={activePage === "records" ? "active" : ""}
-                onClick={() => goToPage("records")}
-                title="Sales Records"
-              >
-                <BarChart3 size={18} />
-                <span className="nav-label">Sales Records</span>
-              </button>
-
-              <button
-                className={activePage === "workers" ? "active" : ""}
-                onClick={() => goToPage("workers")}
-                title="Workers"
-              >
-                <UsersRound size={18} />
-                <span className="nav-label">Workers</span>
-              </button>
-
-              <button
-                className={activePage === "services" ? "active" : ""}
-                onClick={() => goToPage("services")}
-                title="Services"
-              >
-                <Droplets size={18} />
-                <span className="nav-label">Services</span>
-              </button>
-            </>
-          ) : (
-            <button
-              className={activePage === "login" ? "active" : ""}
-              onClick={() => goToPage("login")}
-              title="Login"
-            >
-              <LogIn size={18} />
-              <span className="nav-label">Login</span>
-            </button>
+            )
           )}
         </nav>
+
+        {isLoggedIn && access?.installed && access.role && (
+          <div className="signed-in-as nav-label">
+            {access.name}
+            <span>{ROLE_LABELS[access.role]}</span>
+          </div>
+        )}
 
         {isLoggedIn && (
           <button className="logout-btn" onClick={handleLogout} title="Logout">
@@ -616,43 +606,32 @@ export default function App() {
         <header className="topbar">
           <div>
             <span className="eyebrow">MK4 POS</span>
-            <h2>
-              {activePage === "form" && "Worker Carwash Entry"}
-              {activePage === "dashboard" && "Admin Analytics Dashboard"}
-              {activePage === "records" && "Sales Order Records"}
-              {activePage === "workers" && "Workers and Commission"}
-              {activePage === "services" && "Services and Pricing"}
-              {activePage === "login" && "Admin Login"}
-            </h2>
+            <h2>{PAGE_TITLES[currentPage] || "MK4 Auto Care"}</h2>
           </div>
         </header>
 
-        {!authChecked && needsAuth && (
+        {(!authChecked || (!access && dataState !== "error")) && (
           <div className="form-card">
-            <h2>Checking admin access...</h2>
+            <h2>Checking access...</h2>
           </div>
         )}
 
-        {authChecked && needsAuth && !isLoggedIn && (
+        {authChecked && access && isLoggedIn && !can.pages.length && (
+          <div className="form-card">
+            <h2>No access yet</h2>
+            <p>
+              This login is not linked to an active employee. Ask an admin to
+              put your login email on your profile on the Employees page, then
+              log in again.
+            </p>
+          </div>
+        )}
+
+        {currentPage === "login" && (
           <AuthPage onLoginSuccess={(newSession) => setSession(newSession)} />
         )}
 
-        {activePage === "login" && !isLoggedIn && authChecked && (
-          <AuthPage
-            onLoginSuccess={(newSession) => {
-              setSession(newSession);
-              setActivePage("dashboard");
-            }}
-          />
-        )}
-
-        {activePage === "login" && !authChecked && (
-          <div className="form-card">
-            <h2>Checking admin access...</h2>
-          </div>
-        )}
-
-        {activePage === "form" && (
+        {currentPage === "form" && (
           <WorkerForm
             /*
              * The form builds its first blank service row from the price list,
@@ -669,11 +648,11 @@ export default function App() {
           />
         )}
 
-        {authChecked && isLoggedIn && activePage === "dashboard" && (
+        {currentPage === "dashboard" && (
           <AdminDashboard orders={orders} workers={workers} />
         )}
 
-        {authChecked && isLoggedIn && activePage === "records" && (
+        {currentPage === "records" && (
           <SalesRecords
             orders={orders}
             workers={workers}
@@ -682,11 +661,11 @@ export default function App() {
           />
         )}
 
-        {authChecked && isLoggedIn && activePage === "services" && (
+        {currentPage === "services" && (
           <ServicesManagement pricing={pricing} onUpdatePricing={setPricing} />
         )}
 
-        {authChecked && isLoggedIn && activePage === "workers" && (
+        {currentPage === "workers" && (
           <WorkerManagement
             workers={workers}
             orders={orders}
@@ -695,6 +674,8 @@ export default function App() {
             onDeleteWorker={deleteWorker}
             commissionSettings={commissionSettings}
             onUpdateCommissionSettings={setCommissionSettings}
+            rolesOn={Boolean(access?.installed)}
+            manageAdmins={can.manageAdmins}
           />
         )}
       </main>

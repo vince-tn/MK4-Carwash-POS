@@ -15,6 +15,7 @@ import StatCard from "./StatCard";
 import WorkerReports from "./WorkerReports";
 import DashboardReport from "./DashboardReport";
 import { localDateString } from "../lib/reportUtils";
+import { isSalesWorker } from "../lib/access";
 
 const peso = new Intl.NumberFormat("en-PH", {
   style: "currency",
@@ -100,7 +101,8 @@ export default function AdminDashboard({ orders, workers }) {
     .sort((a, b) => b.total - a.total);
 
   const topWorker = washerChartData[0];
-  const activeWorkers = workers.filter((worker) => worker.status === "Active");
+  const salesWorkers = workers.filter(isSalesWorker);
+  const activeWorkers = salesWorkers.filter((worker) => worker.status === "Active");
 
   function toggleCard(cardKey) {
     setExpandedCard((prev) => (prev === cardKey ? null : cardKey));
@@ -191,7 +193,7 @@ export default function AdminDashboard({ orders, workers }) {
           {expandedCard === "topworker" ? (
             <WorkerReports
               orders={orders}
-              workers={workers}
+              workers={salesWorkers}
               initialView="individual"
               initialWorkerId={topWorker?.workerId || ""}
             />

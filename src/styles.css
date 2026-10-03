@@ -1679,3 +1679,36 @@ td {
   padding-left: 12px;
   white-space: normal;
 }
+
+/* --- Signed-in user, above Logout --- */
+
+.signed-in-as {
+  margin-top: 18px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  color: white;
+  font-size: 0.85rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.signed-in-as span {
+  display: block;
+  margin-top: 2px;
+  color: #a1a1aa;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.sidebar.collapsed .signed-in-as {
+  display: none;
+}
+
+/* Wraps an employee's fields so an admin's record can be locked as a whole */
+.profile-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}

@@ -1,6 +1,30 @@
 import { useMemo, useState } from "react";
 import WorkerReports from "./WorkerReports";
 import { localDateString } from "../lib/reportUtils";
+import { isSalesWorker } from "../lib/access";
+
+const ROLES = ["Admin", "Secretary", "Worker"];
+
+/*
+ * The roles a login can be given. Only admins may make someone an Admin (the
+ * database refuses it otherwise). A record still carrying an old job title
+ * from before roles (Washer, Manager...) keeps it as an extra option until
+ * it is changed.
+ */
+function RoleOptions({ current, manageAdmins }) {
+  const roles = ROLES.filter(
+    (role) => role !== "Admin" || manageAdmins || current === "Admin"
+  );
+
+  return (
+    <>
+      {current && !roles.includes(current) && <option>{current}</option>}
+      {roles.map((role) => (
+        <option key={role}>{role}</option>
+      ))}
+    </>
+  );
+}
 
 const peso = new Intl.NumberFormat("en-PH", {
   style: "currency",
@@ -27,12 +51,14 @@ function getWorkerStats(workerId, orders) {
 }
 
 /*
- * One worker's editable fields. Typed fields are held in a local draft and
+ * One employee's editable fields. Typed fields are held in a local draft and
  * saved when the field loses focus: saving on every keystroke sent a request
  * per letter, and a late reply could overwrite what had been typed since.
  * Dropdowns and the date are single choices, so they save straight away.
+ *
+ * locked: an Admin's record seen by a secretary. Shown, not editable.
  */
-function WorkerProfileFields({ worker, onUpdateWorker }) {
+function WorkerProfileFields({ worker, onUpdateWorker, rolesOn, manageAdmins, locked }) {
   const [draft, setDraft] = useState(worker);
 
   function edit(field, value) {
@@ -42,7 +68,7 @@ function WorkerProfileFields({ worker, onUpdateWorker }) {
   function commit(field) {
     if (draft[field] === worker[field]) return;
 
-    // A worker needs a name; put the saved one back rather than store a blank.
+    // An employee needs a name; put the saved one back rather than store a blank.
     if (field === "name" && !String(draft.name).trim()) {
       edit("name", worker.name);
       return;
@@ -58,16 +84,18 @@ function WorkerProfileFields({ worker, onUpdateWorker }) {
 
   function textProps(field) {
     return {
-      value: draft[field],
+      value: draft[field] ?? "",
       onChange: (e) => edit(field, e.target.value),
       onBlur: () => commit(field),
+      disabled: locked,
     };
   }
 
   return (
+    <fieldset className="profile-fieldset" disabled={locked}>
     <div className="form-grid">
       <label>
-        Worker Name
+        Employee Name
         <input {...textProps("name")} />
       </label>
 
@@ -77,13 +105,20 @@ function WorkerProfileFields({ worker, onUpdateWorker }) {
           value={draft.role}
           onChange={(e) => choose("role", e.target.value)}
         >
-          <option>Washer</option>
-          <option>Detailer</option>
-          <option>Manager</option>
-          <option>Cashier</option>
-          <option>Other</option>
+          <RoleOptions current={draft.role} manageAdmins={manageAdmins} />
         </select>
       </label>
+
+      {rolesOn && (
+        <label>
+          Login Email
+          <input
+            type="email"
+            placeholder="Their login, e.g. angelica@mk4.pos"
+            {...textProps("loginEmail")}
+          />
+        </label>
+      )}
 
       <label>
         Phone
@@ -146,6 +181,7 @@ function WorkerProfileFields({ worker, onUpdateWorker }) {
         <input {...textProps("notes")} />
       </label>
     </div>
+    </fieldset>
   );
 }
 
@@ -157,20 +193,29 @@ export default function WorkerManagement({
   onDeleteWorker,
   commissionSettings,
   onUpdateCommissionSettings,
+  rolesOn = false,
+  manageAdmins = true,
 }) {
   const today = localDateString();
 
-  const [newWorker, setNewWorker] = useState({
-    name: "",
-    role: "Washer",
-    phone: "",
-    address: "",
-    status: "Active",
-    dateJoined: today,
-    notes: "",
-    commissionMode: "inherit",
-    commissionValue: "",
-  });
+  // loginEmail only exists once roles are on (supabase/14); before that the
+  // column is not there to save into.
+  function blankEmployee() {
+    return {
+      name: "",
+      role: "Worker",
+      phone: "",
+      address: "",
+      status: "Active",
+      dateJoined: today,
+      notes: "",
+      commissionMode: "inherit",
+      commissionValue: "",
+      ...(rolesOn ? { loginEmail: "" } : {}),
+    };
+  }
+
+  const [newWorker, setNewWorker] = useState(blankEmployee);
 
   const activeWorkers = useMemo(() => {
     return workers.filter((worker) => worker.status === "Active");
@@ -187,7 +232,7 @@ export default function WorkerManagement({
     e.preventDefault();
 
     if (!newWorker.name.trim()) {
-      alert("Please enter the worker name.");
+      alert("Please enter the employee's name.");
       return;
     }
 
@@ -197,17 +242,7 @@ export default function WorkerManagement({
       name: newWorker.name.trim(),
     });
 
-    setNewWorker({
-      name: "",
-      role: "Washer",
-      phone: "",
-      address: "",
-      status: "Active",
-      dateJoined: today,
-      notes: "",
-      commissionMode: "inherit",
-      commissionValue: "",
-    });
+    setNewWorker(blankEmployee());
   }
 
   return (
@@ -215,11 +250,11 @@ export default function WorkerManagement({
       <div className="dashboard-header">
         <div>
           <span className="eyebrow">Admin Setup</span>
-          <h2>Workers and Commission Rules</h2>
+          <h2>Employees and Commission Rules</h2>
         </div>
 
         <div className="quota-pill">
-          <span>Active Workers</span>
+          <span>Active Employees</span>
           <strong>{activeWorkers.length}</strong>
         </div>
       </div>
@@ -228,19 +263,19 @@ export default function WorkerManagement({
         <form className="form-card" onSubmit={handleAddWorker}>
           <div className="section-heading">
             <div>
-              <span className="eyebrow">Worker Registry</span>
-              <h2>Add Worker</h2>
+              <span className="eyebrow">Employee Registry</span>
+              <h2>Add Employee</h2>
             </div>
           </div>
 
           <div className="form-grid">
             <label>
-              Worker Name
+              Employee Name
               <input
                 type="text"
                 value={newWorker.name}
                 onChange={(e) => updateNewWorker("name", e.target.value)}
-                placeholder="Worker name"
+                placeholder="Employee name"
               />
             </label>
 
@@ -250,13 +285,21 @@ export default function WorkerManagement({
                 value={newWorker.role}
                 onChange={(e) => updateNewWorker("role", e.target.value)}
               >
-                <option>Washer</option>
-                <option>Detailer</option>
-                <option>Manager</option>
-                <option>Cashier</option>
-                <option>Other</option>
+                <RoleOptions current={newWorker.role} manageAdmins={manageAdmins} />
               </select>
             </label>
+
+            {rolesOn && (
+              <label>
+                Login Email
+                <input
+                  type="email"
+                  value={newWorker.loginEmail}
+                  onChange={(e) => updateNewWorker("loginEmail", e.target.value)}
+                  placeholder="Their login, e.g. angelica@mk4.pos"
+                />
+              </label>
+            )}
 
             <label>
               Phone
@@ -332,7 +375,7 @@ export default function WorkerManagement({
           </div>
 
           <button className="submit-btn" type="submit">
-            Add Worker
+            Add Employee
           </button>
         </form>
 
@@ -402,15 +445,16 @@ export default function WorkerManagement({
           </div>
         </div>
 
-        <WorkerReports orders={orders} workers={workers} />
+        <WorkerReports orders={orders} workers={workers.filter(isSalesWorker)} />
       </div>
 
       <div className="worker-list">
         {workers.length === 0 ? (
-          <div className="empty-card">No workers yet.</div>
+          <div className="empty-card">No employees yet.</div>
         ) : (
           workers.map((worker) => {
             const stats = getWorkerStats(worker.id, orders);
+            const locked = worker.role === "Admin" && !manageAdmins;
 
             return (
               <details className="worker-profile" key={worker.id}>
@@ -433,6 +477,9 @@ export default function WorkerManagement({
                   <WorkerProfileFields
                     worker={worker}
                     onUpdateWorker={onUpdateWorker}
+                    rolesOn={rolesOn}
+                    manageAdmins={manageAdmins}
+                    locked={locked}
                   />
 
                   <div className="worker-stat-grid">
@@ -454,13 +501,19 @@ export default function WorkerManagement({
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    className="danger-btn"
-                    onClick={() => onDeleteWorker(worker.id)}
-                  >
-                    Delete Worker
-                  </button>
+                  {locked ? (
+                    <p className="field-hint">
+                      Only an admin can change or remove an admin.
+                    </p>
+                  ) : (
+                    <button
+                      type="button"
+                      className="danger-btn"
+                      onClick={() => onDeleteWorker(worker.id)}
+                    >
+                      Delete Employee
+                    </button>
+                  )}
                 </div>
               </details>
             );

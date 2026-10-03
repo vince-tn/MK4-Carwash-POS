@@ -1,5 +1,6 @@
 import { Fragment, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
+import { isSalesWorker } from "../lib/access";
 
 const peso = new Intl.NumberFormat("en-PH", {
   style: "currency",
@@ -660,7 +661,7 @@ export default function SalesRecords({
           <div>
             <strong>Worker Filter</strong>
             <div className="filter-checks">
-              {workers.map((worker) => (
+              {workers.filter(isSalesWorker).map((worker) => (
                 <label className="check-label compact-check" key={worker.id}>
                   <input
                     type="checkbox"

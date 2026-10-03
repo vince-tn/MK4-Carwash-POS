@@ -400,7 +400,7 @@ export default function WorkerForm({
     }
 
     if (!form.workerId) {
-      alert("Please select a worker. Add workers in the Workers admin page.");
+      alert("Please select a worker. Add workers on the Employees page.");
       return;
     }
 
@@ -499,8 +499,8 @@ export default function WorkerForm({
 
         {activeWorkers.length === 0 && (
           <div className="warning-card">
-            No active workers found. Go to the Workers page and add at least one
-            worker.
+            No active workers found. Go to the Employees page and add at least
+            one worker.
           </div>
         )}
 

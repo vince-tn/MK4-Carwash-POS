@@ -332,13 +332,42 @@ export async function removeProofs(paths) {
   }
 }
 
+/* ------------------------------------------------------------------ access */
+
+/*
+ * Who the signed-in user is, from my_access() (supabase/14_roles.sql).
+ *
+ * installed: false means that migration has not run, and the app keeps its
+ * old behavior. Any other failure is a real error and is thrown.
+ */
+export async function fetchAccess() {
+  const { data, error } = await supabase.rpc("my_access");
+
+  if (error) {
+    // PostgREST's code for "no such function".
+    if (error.code === "PGRST202") return { installed: false, role: null };
+    throw error;
+  }
+
+  return {
+    installed: true,
+    role: data?.role || null,
+    employeeId: data?.employee_id || null,
+    name: data?.name || "",
+  };
+}
+
 /* ----------------------------------------------------------------- workers */
 
 function toAppWorker(row) {
   return {
     id: row.id,
     name: row.name,
-    role: row.role || "Washer",
+    role: row.role || "Worker",
+    // undefined when the database predates login emails (before 14), so
+    // saves leave the column out rather than fail on it.
+    loginEmail:
+      row.login_email === undefined ? undefined : row.login_email || "",
     phone: row.phone || "",
     address: row.address || "",
     status: row.status || "Active",
@@ -352,7 +381,10 @@ function toAppWorker(row) {
 function toWorkerRow(worker) {
   return {
     name: worker.name,
-    role: worker.role || "Washer",
+    role: worker.role || "Worker",
+    ...(worker.loginEmail === undefined
+      ? {}
+      : { login_email: worker.loginEmail.trim().toLowerCase() || null }),
     phone: worker.phone || null,
     address: worker.address || null,
     status: worker.status || "Active",
