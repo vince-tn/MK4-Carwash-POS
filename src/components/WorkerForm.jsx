@@ -102,13 +102,18 @@ export default function WorkerForm({
   const today = localDateString();
   const activeWorkers = workers.filter((worker) => worker.status === "Active");
 
+  // A personal login has one worker, chosen for them. The shared worker login
+  // has several, and none is preselected, so a sale is never filed under the
+  // first name in the list because nobody changed it.
+  const defaultWorkerId = activeWorkers.length === 1 ? activeWorkers[0].id : "";
+
   const [form, setForm] = useState({
     date: today,
     plateNumber: "",
     customerName: "",
     contactNumber: "",
     carType: "Medium",
-    workerId: activeWorkers[0]?.id || "",
+    workerId: defaultWorkerId,
     manager: "",
     services: [createBlankService(pricingData)],
     selectedAddOns: [],
@@ -364,7 +369,7 @@ export default function WorkerForm({
       customerName: "",
       contactNumber: "",
       carType: "Medium",
-      workerId: activeWorkers[0]?.id || "",
+      workerId: defaultWorkerId,
       manager: "",
       services: [createBlankService(pricingData)],
       selectedAddOns: [],
@@ -400,7 +405,11 @@ export default function WorkerForm({
     }
 
     if (!form.workerId) {
-      alert("Please select a worker. Add workers on the Employees page.");
+      alert(
+        activeWorkers.length
+          ? "Please choose which worker did this car."
+          : "Please select a worker. Add workers on the Employees page."
+      );
       return;
     }
 
@@ -575,6 +584,11 @@ export default function WorkerForm({
                 value={form.workerId}
                 onChange={(e) => updateField("workerId", e.target.value)}
               >
+                {activeWorkers.length > 1 && (
+                  <option value="" disabled>
+                    Select your name
+                  </option>
+                )}
                 {activeWorkers.map((worker) => (
                   <option key={worker.id} value={worker.id}>
                     {worker.name}

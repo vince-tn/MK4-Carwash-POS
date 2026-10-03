@@ -114,7 +114,7 @@ function WorkerProfileFields({ worker, onUpdateWorker, rolesOn, manageAdmins, lo
           Login Email
           <input
             type="email"
-            placeholder="Their login, e.g. angelica@mk4.pos"
+            placeholder="Blank: the shared login for their role"
             {...textProps("loginEmail")}
           />
         </label>
@@ -296,7 +296,7 @@ export default function WorkerManagement({
                   type="email"
                   value={newWorker.loginEmail}
                   onChange={(e) => updateNewWorker("loginEmail", e.target.value)}
-                  placeholder="Their login, e.g. angelica@mk4.pos"
+                  placeholder="Blank: the shared login for their role"
                 />
               </label>
             )}

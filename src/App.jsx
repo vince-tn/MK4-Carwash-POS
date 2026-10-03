@@ -161,9 +161,11 @@ export default function App() {
 
         const [nextWorkers, nextCommission, nextPricing, nextOrders] =
           await Promise.all([
-            can.loadWorkers
-              ? db.fetchWorkers({ publicOnly: can.loadWorkers === "public" })
-              : [],
+            can.loadWorkers === "mine"
+              ? db.fetchMyEmployees()
+              : can.loadWorkers
+                ? db.fetchWorkers({ publicOnly: can.loadWorkers === "public" })
+                : [],
             can.loadCommission
               ? db.fetchCommissionSettings()
               : defaultCommissionSettings,

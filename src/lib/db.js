@@ -352,9 +352,28 @@ export async function fetchAccess() {
   return {
     installed: true,
     role: data?.role || null,
+    // A login several employees share, such as worker@mk4.pos (15).
+    shared: Boolean(data?.shared),
     employeeId: data?.employee_id || null,
     name: data?.name || "",
   };
+}
+
+/*
+ * The active employees on the signed-in login, for the Worker Form: just the
+ * worker on a personal login, every worker on the shared one. my_employees()
+ * (15) returns only names and commission rules. Before 15 it does not exist,
+ * and the login's own record comes from the employees table as in 14.
+ */
+export async function fetchMyEmployees() {
+  const { data, error } = await supabase.rpc("my_employees");
+
+  if (error) {
+    if (error.code === "PGRST202") return fetchWorkers();
+    throw error;
+  }
+
+  return (data || []).map(toAppWorker);
 }
 
 /* ----------------------------------------------------------------- workers */

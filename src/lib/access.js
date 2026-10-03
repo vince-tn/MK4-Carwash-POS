@@ -87,14 +87,15 @@ export function accessFor(access, isLoggedIn) {
   }
 
   if (access.role === "worker") {
-    // The database returns only the worker's own employee record.
+    // Only the workers on this login: the worker themselves, or everyone on
+    // the shared worker login.
     return {
       ...NOTHING,
       pages: ["form"],
       home: "form",
       loadPricing: true,
       loadCommission: true,
-      loadWorkers: "all",
+      loadWorkers: "mine",
     };
   }
 
