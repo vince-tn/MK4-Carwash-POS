@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -25,80 +25,77 @@ const peso = new Intl.NumberFormat("en-PH", {
 export default function AdminDashboard({ orders, workers }) {
   const [expandedCard, setExpandedCard] = useState(null);
 
-  const totalSales = orders.reduce((sum, order) => sum + Number(order.total || 0), 0);
+  // Everything below depends only on the sales, so it is worked out in one
+  // pass and kept until they change, not redone each time a card is opened.
+  const stats = useMemo(() => {
+    const totals = {
+      sales: 0,
+      cash: 0,
+      gcash: 0,
+      credit: 0,
+      discount: 0,
+      commission: 0,
+    };
+    const serviceMap = {};
+    const workerMap = {};
+
+    orders.forEach((order) => {
+      totals.sales += Number(order.total || 0);
+      if (order.paymentEnabled?.cash) totals.cash += Number(order.cash) || 0;
+      if (order.paymentEnabled?.gcash) totals.gcash += Number(order.gcash) || 0;
+      if (order.paymentEnabled?.credit) totals.credit += Number(order.credit) || 0;
+      if (order.paymentEnabled?.discount) {
+        totals.discount += Number(order.discount) || 0;
+      }
+      totals.commission += Number(order.commission || 0);
+
+      order.services?.forEach((service) => {
+        serviceMap[service.category] =
+          (serviceMap[service.category] || 0) + Number(service.price || 0);
+      });
+
+      if (!workerMap[order.washerName]) {
+        workerMap[order.washerName] = {
+          worker: order.washerName,
+          workerId: order.workerId,
+          cars: 0,
+          commission: 0,
+          sales: 0,
+        };
+      }
+
+      workerMap[order.washerName].cars += 1;
+      workerMap[order.washerName].commission += Number(order.commission || 0);
+      workerMap[order.washerName].sales += Number(order.total || 0);
+    });
+
+    return {
+      ...totals,
+      washerChartData: Object.values(workerMap).sort((a, b) => b.sales - a.sales),
+      serviceMixData: Object.entries(serviceMap)
+        .map(([name, total]) => ({ name, total }))
+        .filter((item) => item.total > 0)
+        .sort((a, b) => b.total - a.total),
+    };
+  }, [orders]);
+
+  const {
+    sales: totalSales,
+    cash: cashSales,
+    gcash: gcashSales,
+    credit: creditSales,
+    discount: totalDiscount,
+    commission: totalCommission,
+    washerChartData,
+    serviceMixData,
+  } = stats;
   const totalCars = orders.length;
-
-  const cashSales = orders.reduce(
-    (sum, order) =>
-      sum + (order.paymentEnabled?.cash ? Number(order.cash) || 0 : 0),
-    0
-  );
-
-  const gcashSales = orders.reduce(
-    (sum, order) =>
-      sum + (order.paymentEnabled?.gcash ? Number(order.gcash) || 0 : 0),
-    0
-  );
-
-  const creditSales = orders.reduce(
-    (sum, order) =>
-      sum + (order.paymentEnabled?.credit ? Number(order.credit) || 0 : 0),
-    0
-  );
-
-  const totalDiscount = orders.reduce(
-    (sum, order) =>
-      sum + (order.paymentEnabled?.discount ? Number(order.discount) || 0 : 0),
-    0
-  );
-
-  const totalCommission = orders.reduce(
-    (sum, order) => sum + Number(order.commission || 0),
-    0
-  );
 
   // The quota is per day. Every other figure on this page is all-time.
   const quotaTarget = 60;
   const today = localDateString();
   const carsToday = orders.filter((order) => order.date === today).length;
   const quotaPercent = Math.min((carsToday / quotaTarget) * 100, 100);
-
-  const serviceMap = {};
-  const workerMap = {};
-
-  orders.forEach((order) => {
-    order.services?.forEach((service) => {
-      serviceMap[service.category] =
-        (serviceMap[service.category] || 0) + Number(service.price || 0);
-    });
-
-    if (!workerMap[order.washerName]) {
-      workerMap[order.washerName] = {
-        worker: order.washerName,
-        workerId: order.workerId,
-        cars: 0,
-        commission: 0,
-        sales: 0,
-      };
-    }
-
-    workerMap[order.washerName].cars += 1;
-    workerMap[order.washerName].commission += Number(order.commission || 0);
-    workerMap[order.washerName].sales += Number(order.total || 0);
-  });
-
-  const serviceChartData = Object.entries(serviceMap).map(([name, total]) => ({
-    name,
-    total,
-  }));
-
-  const washerChartData = Object.values(workerMap).sort(
-    (a, b) => b.sales - a.sales
-  );
-
-  const serviceMixData = serviceChartData
-    .filter((item) => item.total > 0)
-    .sort((a, b) => b.total - a.total);
 
   const topWorker = washerChartData[0];
   const salesWorkers = workers.filter(isSalesWorker);

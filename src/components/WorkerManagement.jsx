@@ -36,18 +36,36 @@ function createWorkerId(name) {
   return `worker-${safeName}-${Date.now()}`;
 }
 
-function getWorkerStats(workerId, orders) {
-  const workerOrders = orders.filter((order) => order.workerId === workerId);
+const NO_SALES = { cars: 0, sales: 0, commission: 0, latestOrder: "No sales yet" };
 
-  return {
-    cars: workerOrders.length,
-    sales: workerOrders.reduce((sum, order) => sum + Number(order.total || 0), 0),
-    commission: workerOrders.reduce(
-      (sum, order) => sum + Number(order.commission || 0),
-      0
-    ),
-    latestOrder: workerOrders[0]?.date || "No sales yet",
-  };
+/*
+ * Every employee's totals from one pass over the sales. This used to filter
+ * all sales once per employee on every render, including each keystroke in
+ * the Add Employee form, which grows with employees times sales. Sales arrive
+ * newest first, so an employee's first sale seen is their latest.
+ */
+function statsByWorker(orders) {
+  const stats = new Map();
+
+  orders.forEach((order) => {
+    let entry = stats.get(order.workerId);
+
+    if (!entry) {
+      entry = {
+        cars: 0,
+        sales: 0,
+        commission: 0,
+        latestOrder: order.date || "No sales yet",
+      };
+      stats.set(order.workerId, entry);
+    }
+
+    entry.cars += 1;
+    entry.sales += Number(order.total || 0);
+    entry.commission += Number(order.commission || 0);
+  });
+
+  return stats;
 }
 
 /*
@@ -220,6 +238,8 @@ export default function WorkerManagement({
   const activeWorkers = useMemo(() => {
     return workers.filter((worker) => worker.status === "Active");
   }, [workers]);
+
+  const workerStats = useMemo(() => statsByWorker(orders), [orders]);
 
   function updateNewWorker(field, value) {
     setNewWorker((prev) => ({
@@ -453,7 +473,7 @@ export default function WorkerManagement({
           <div className="empty-card">No employees yet.</div>
         ) : (
           workers.map((worker) => {
-            const stats = getWorkerStats(worker.id, orders);
+            const stats = workerStats.get(worker.id) || NO_SALES;
             const locked = worker.role === "Admin" && !manageAdmins;
 
             return (

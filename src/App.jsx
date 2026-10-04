@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Component, lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   BarChart3,
   ClipboardList,
@@ -10,18 +10,61 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
-import WorkerForm from "./components/WorkerForm";
-import AdminDashboard from "./components/AdminDashboard";
-import SalesRecords from "./components/SalesRecords";
-import WorkerManagement from "./components/WorkerManagement";
-import ServicesManagement from "./components/ServicesManagement";
-import logo from "./assets/logo.png";
+import logo from "./assets/logo.webp";
 import { supabase } from "./lib/supabaseClient";
 import AuthPage from "./components/AuthPage";
 import ConfirmModal from "./components/ConfirmModal";
 import { buildDefaultPricing } from "./data/pricing";
 import * as db from "./lib/db";
 import { accessFor, ROLE_LABELS } from "./lib/access";
+
+// Each page is a separate download, fetched the first time it is needed and
+// prefetched once the login's role is known. A worker's phone never
+// downloads the dashboard and its charts library.
+const loadPage = {
+  form: () => import("./components/WorkerForm"),
+  dashboard: () => import("./components/AdminDashboard"),
+  records: () => import("./components/SalesRecords"),
+  workers: () => import("./components/WorkerManagement"),
+  services: () => import("./components/ServicesManagement"),
+};
+
+const WorkerForm = lazy(loadPage.form);
+const AdminDashboard = lazy(loadPage.dashboard);
+const SalesRecords = lazy(loadPage.records);
+const WorkerManagement = lazy(loadPage.workers);
+const ServicesManagement = lazy(loadPage.services);
+
+/*
+ * A page's code can fail to download: a dropped connection, or a deploy that
+ * replaced the files since this tab was opened. Offer a reload instead of a
+ * blank screen. This also catches a page that crashes while drawing.
+ */
+class PageErrorBoundary extends Component {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    if (!this.state.failed) return this.props.children;
+
+    return (
+      <div className="form-card">
+        <h2>This page could not load</h2>
+        <p>Check the connection, then reload.</p>
+        <button
+          type="button"
+          className="submit-btn"
+          onClick={() => window.location.reload()}
+        >
+          Reload
+        </button>
+      </div>
+    );
+  }
+}
 
 // Only kept so a device that still holds records from before the database
 // cutover can hand them over once; see the import banner below.
@@ -203,6 +246,15 @@ export default function App() {
   const can = accessFor(access, isLoggedIn);
   const currentPage = can.pages.includes(activePage) ? activePage : can.home;
   const { editPricing, editCommission } = can;
+  const pagesKey = can.pages.join(",");
+
+  // Fetch the code for this login's pages in the background, so opening one
+  // later is instant. The browser caches each one after the first time.
+  useEffect(() => {
+    pagesKey
+      .split(",")
+      .forEach((page) => loadPage[page]?.().catch(() => undefined));
+  }, [pagesKey]);
 
   // The Services page reports every keystroke, so writes are debounced.
   useEffect(() => {
@@ -633,53 +685,64 @@ export default function App() {
           <AuthPage onLoginSuccess={(newSession) => setSession(newSession)} />
         )}
 
-        {currentPage === "form" && (
-          <WorkerForm
-            /*
-             * The form builds its first blank service row from the price list,
-             * which now arrives asynchronously. Keying on whether that list
-             * has loaded remounts the form once it does, so Package / Size is
-             * never left empty because the data was a moment late.
-             */
-            key={pricing.categories.length ? "priced" : "empty"}
-            onAddOrder={addOrder}
-            workers={workers}
-            commissionSettings={commissionSettings}
-            pricingData={pricing.categories}
-            addOns={pricing.addOns}
-          />
-        )}
+        {/* key: a failed page does not keep the next one from loading */}
+        <PageErrorBoundary key={currentPage}>
+          <Suspense
+            fallback={
+              <div className="form-card">
+                <h2>Loading...</h2>
+              </div>
+            }
+          >
+            {currentPage === "form" && (
+              <WorkerForm
+                /*
+                 * The form builds its first blank service row from the price list,
+                 * which now arrives asynchronously. Keying on whether that list
+                 * has loaded remounts the form once it does, so Package / Size is
+                 * never left empty because the data was a moment late.
+                 */
+                key={pricing.categories.length ? "priced" : "empty"}
+                onAddOrder={addOrder}
+                workers={workers}
+                commissionSettings={commissionSettings}
+                pricingData={pricing.categories}
+                addOns={pricing.addOns}
+              />
+            )}
 
-        {currentPage === "dashboard" && (
-          <AdminDashboard orders={orders} workers={workers} />
-        )}
+            {currentPage === "dashboard" && (
+              <AdminDashboard orders={orders} workers={workers} />
+            )}
 
-        {currentPage === "records" && (
-          <SalesRecords
-            orders={orders}
-            workers={workers}
-            onUpdateOrderPayment={updateOrderPayment}
-            onDeleteOrder={deleteOrder}
-          />
-        )}
+            {currentPage === "records" && (
+              <SalesRecords
+                orders={orders}
+                workers={workers}
+                onUpdateOrderPayment={updateOrderPayment}
+                onDeleteOrder={deleteOrder}
+              />
+            )}
 
-        {currentPage === "services" && (
-          <ServicesManagement pricing={pricing} onUpdatePricing={setPricing} />
-        )}
+            {currentPage === "services" && (
+              <ServicesManagement pricing={pricing} onUpdatePricing={setPricing} />
+            )}
 
-        {currentPage === "workers" && (
-          <WorkerManagement
-            workers={workers}
-            orders={orders}
-            onAddWorker={addWorker}
-            onUpdateWorker={updateWorker}
-            onDeleteWorker={deleteWorker}
-            commissionSettings={commissionSettings}
-            onUpdateCommissionSettings={setCommissionSettings}
-            rolesOn={Boolean(access?.installed)}
-            manageAdmins={can.manageAdmins}
-          />
-        )}
+            {currentPage === "workers" && (
+              <WorkerManagement
+                workers={workers}
+                orders={orders}
+                onAddWorker={addWorker}
+                onUpdateWorker={updateWorker}
+                onDeleteWorker={deleteWorker}
+                commissionSettings={commissionSettings}
+                onUpdateCommissionSettings={setCommissionSettings}
+                rolesOn={Boolean(access?.installed)}
+                manageAdmins={can.manageAdmins}
+              />
+            )}
+          </Suspense>
+        </PageErrorBoundary>
       </main>
     </div>
   );

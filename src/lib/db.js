@@ -346,6 +346,11 @@ export async function fetchAccess() {
   if (error) {
     // PostgREST's code for "no such function".
     if (error.code === "PGRST202") return { installed: false, role: null };
+
+    // Refused: from 16 only signed-in users may ask, so roles are on and
+    // nobody is signed in.
+    if (error.code === "42501") return { installed: true, role: null };
+
     throw error;
   }
 
