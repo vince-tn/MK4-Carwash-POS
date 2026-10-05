@@ -1896,3 +1896,9 @@ td {
     animation: none;
   }
 }
+
+/* Sales Records: where more rows are drawn as the table scrolls */
+.records-more {
+  display: flex;
+  justify-content: center;
+}

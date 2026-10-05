@@ -1,4 +1,5 @@
 import { supabase } from "./supabaseClient";
+import { fetchAllPages } from "./paging";
 
 /*
  * Data access for the POS.
@@ -102,26 +103,20 @@ function toAppOrder(row) {
 export async function fetchOrders() {
   // PostgREST caps a response at 1000 rows and does so silently, so a single
   // select would quietly start dropping orders about three weeks into
-  // trading and every report would be wrong without saying so. Page until a
-  // short page comes back.
-  const PAGE_SIZE = 1000;
-  const rows = [];
-
-  for (let from = 0; ; from += PAGE_SIZE) {
+  // trading and every report would be wrong without saying so. Every page is
+  // read, several at a time (lib/paging).
+  const rows = await fetchAllPages(async (from, to, withCount) => {
     // id breaks ties, so the order of rows across pages is fixed.
-    const { data, error } = await supabase
+    const { data, error, count } = await supabase
       .from("orders")
-      .select(ORDER_SELECT)
+      .select(ORDER_SELECT, withCount ? { count: "exact" } : undefined)
       .order("created_at", { ascending: false })
       .order("id", { ascending: false })
-      .range(from, from + PAGE_SIZE - 1);
+      .range(from, to);
 
     if (error) throw error;
-
-    rows.push(...(data || []));
-
-    if (!data || data.length < PAGE_SIZE) break;
-  }
+    return { rows: data || [], count };
+  });
 
   // A sale recorded while the pages are being read pushes every later row
   // down one place, so the last order of one page comes back again at the top
