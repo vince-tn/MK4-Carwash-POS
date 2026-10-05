@@ -761,48 +761,6 @@ td {
 }
 
 @media (max-width: 1200px) {
-  .app-shell,
-  .app-shell.sidebar-collapsed {
-    grid-template-columns: 1fr;
-  }
-
-  .sidebar {
-    height: auto;
-    position: relative;
-  }
-
-  .sidebar nav {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  /* On tablet/mobile the collapse toggle acts as a menu toggle */
-  .sidebar.collapsed {
-    padding: 18px 24px;
-  }
-
-  .sidebar.collapsed .sidebar-top {
-    flex-direction: row;
-    align-items: center;
-    margin-bottom: 0;
-  }
-
-  .sidebar.collapsed .brand {
-    justify-content: flex-start;
-  }
-
-  .sidebar.collapsed .brand-text {
-    display: block;
-  }
-
-  .sidebar.collapsed nav,
-  .sidebar.collapsed .logout-btn {
-    display: none;
-  }
-
-  .sidebar-note {
-    display: none;
-  }
-
   .page-grid,
   .chart-grid {
     grid-template-columns: 1fr;
@@ -829,14 +787,6 @@ td {
   .chart-card,
   .quota-card {
     border-radius: 18px;
-  }
-
-  .sidebar {
-    padding: 18px;
-  }
-
-  .sidebar nav {
-    grid-template-columns: 1fr;
   }
 
   .form-grid,
@@ -1736,4 +1686,213 @@ td {
 
 .check-label.login-wrap {
   white-space: normal;
+}
+
+/* --- Phone layout: fixed header, bottom bar, menu (App.jsx) ---
+   At 900px and below these replace the sidebar. Above it they are hidden. */
+
+.mobile-header,
+.bottom-nav,
+.mobile-drawer-backdrop {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .app-shell,
+  .app-shell.sidebar-collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    display: none;
+  }
+
+  /* The header already shows the page title. */
+  .topbar {
+    display: none;
+  }
+
+  .mobile-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    padding: 10px 14px;
+    background:
+      radial-gradient(circle at top left, rgba(239, 31, 45, 0.35), transparent 45%),
+      linear-gradient(135deg, #050505, #1a1a1a);
+    color: white;
+    border-bottom: 2px solid var(--red);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.18);
+  }
+
+  .mobile-menu-btn {
+    flex: 0 0 auto;
+    width: 42px;
+    height: 42px;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.08);
+    color: white;
+    cursor: pointer;
+  }
+
+  .mobile-header-logo {
+    flex: 0 0 auto;
+    width: 48px;
+    height: 38px;
+    padding: 3px;
+    object-fit: contain;
+    background: #000;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 10px;
+  }
+
+  .mobile-header-title {
+    display: grid;
+    min-width: 0;
+  }
+
+  .mobile-header-title span {
+    color: var(--red);
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .mobile-header-title strong {
+    font-size: 17px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .bottom-nav {
+    display: flex;
+    gap: 4px;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    padding: 6px;
+    background: #0b0b0b;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.2);
+  }
+
+  .bottom-nav button {
+    flex: 1 1 0;
+    min-width: 0;
+    display: grid;
+    justify-items: center;
+    gap: 4px;
+    padding: 8px 2px;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    color: #a1a1aa;
+    font-size: 11px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .bottom-nav button span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .bottom-nav button.active {
+    background: rgba(239, 31, 45, 0.16);
+    color: white;
+  }
+
+  .bottom-nav button.active svg {
+    color: var(--red);
+  }
+
+  /* Room under the last card for the bar. */
+  .app-shell.has-bottom-nav .main-content {
+    padding-bottom: 96px;
+  }
+
+  .mobile-drawer-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    background: rgba(0, 0, 0, 0.55);
+  }
+
+  .mobile-drawer {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(300px, 84vw);
+    display: flex;
+    flex-direction: column;
+    padding: 18px;
+    overflow-y: auto;
+    background:
+      radial-gradient(circle at top left, rgba(239, 31, 45, 0.3), transparent 28%),
+      linear-gradient(180deg, #050505 0%, #151515 100%);
+    color: white;
+    animation: drawer-in 0.18s ease-out;
+  }
+
+  .mobile-drawer-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+
+  .mobile-drawer .logout-btn {
+    margin-top: auto;
+  }
+
+  .mobile-drawer .brand-logo-wrap {
+    width: 56px;
+    height: 44px;
+    border-radius: 14px;
+    box-shadow: 5px 5px 0 rgba(239, 31, 45, 0.28);
+  }
+
+  .mobile-drawer .brand h1 {
+    font-size: 18px;
+  }
+}
+
+/* The smallest phones: five labels still fit. */
+@media (max-width: 360px) {
+  .bottom-nav {
+    gap: 2px;
+    padding: 6px 4px;
+  }
+
+  .bottom-nav button {
+    padding: 8px 0;
+    font-size: 10px;
+  }
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-drawer {
+    animation: none;
+  }
 }

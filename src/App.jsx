@@ -8,8 +8,10 @@ import {
   UsersRound,
   LogIn,
   LogOut,
+  Menu,
   PanelLeftClose,
   PanelLeftOpen,
+  X,
 } from "lucide-react";
 import logo from "./assets/logo.webp";
 import { supabase } from "./lib/supabaseClient";
@@ -111,14 +113,15 @@ const defaultCommissionSettings = {
 const EMPTY_PRICING = { categories: [], addOns: [] };
 
 // Sidebar order. Each login sees the entries its role allows (lib/access).
+// short: the label under the icon in the phone's bottom bar.
 const NAV = [
-  { page: "form", label: "Worker Form", icon: ClipboardList },
-  { page: "dashboard", label: "Admin Dashboard", icon: LayoutDashboard },
-  { page: "records", label: "Sales Records", icon: BarChart3 },
-  { page: "workers", label: "Employees", icon: UsersRound },
-  { page: "logins", label: "Logins", icon: KeyRound },
-  { page: "services", label: "Services", icon: Droplets },
-  { page: "login", label: "Login", icon: LogIn },
+  { page: "form", label: "Worker Form", short: "Form", icon: ClipboardList },
+  { page: "dashboard", label: "Admin Dashboard", short: "Dashboard", icon: LayoutDashboard },
+  { page: "records", label: "Sales Records", short: "Sales", icon: BarChart3 },
+  { page: "workers", label: "Employees", short: "Employees", icon: UsersRound },
+  { page: "logins", label: "Logins", short: "Logins", icon: KeyRound },
+  { page: "services", label: "Services", short: "Services", icon: Droplets },
+  { page: "login", label: "Login", short: "Login", icon: LogIn },
 ];
 
 const PAGE_TITLES = {
@@ -138,6 +141,8 @@ export default function App() {
   // its role's home page otherwise (see currentPage below).
   const [activePage, setActivePage] = useState(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // The phone layout's menu: who is signed in, and Logout.
+  const [menuOpen, setMenuOpen] = useState(false);
   const [session, setSession] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [orders, setOrders] = useState([]);
@@ -252,6 +257,20 @@ export default function App() {
   const currentPage = can.pages.includes(activePage) ? activePage : can.home;
   const { editPricing, editCommission } = can;
   const pagesKey = can.pages.join(",");
+  const navItems = NAV.filter((item) => can.pages.includes(item.page));
+  // A bottom bar with one button goes nowhere, so a worker's phone has none.
+  const hasBottomNav = navItems.length > 1;
+
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+
+    function closeOnEscape(event) {
+      if (event.key === "Escape") setMenuOpen(false);
+    }
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [menuOpen]);
 
   // Fetch the code for this login's pages in the background, so opening one
   // later is instant. The browser caches each one after the first time.
@@ -578,8 +597,24 @@ export default function App() {
   function goToPage(page) {
     setActivePage(page);
   }
+
+  // The bottom bar switches pages like a phone app: each opens at its top.
+  function goToPageFromBottomBar(page) {
+    setActivePage(page);
+    window.scrollTo(0, 0);
+  }
+
+  function logoutFromMenu() {
+    setMenuOpen(false);
+    handleLogout();
+  }
+
   return (
-    <div className={`app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
+    <div
+      className={`app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
+        hasBottomNav ? " has-bottom-nav" : ""
+      }`}
+    >
       {dataState === "loading" && (
         <div className="data-banner">Loading records…</div>
       )}
@@ -641,7 +676,7 @@ export default function App() {
         </div>
 
         <nav>
-          {NAV.filter((item) => can.pages.includes(item.page)).map(
+          {navItems.map(
             ({ page, label, icon: Icon }) => (
               <button
                 key={page}
@@ -670,6 +705,91 @@ export default function App() {
           </button>
         )}
       </aside>
+
+      {/* Phones and small tablets: this header, the bottom bar and the menu
+          replace the sidebar (styles.css, max-width 900px). */}
+      <header className="mobile-header">
+        {isLoggedIn && (
+          <button
+            type="button"
+            className="mobile-menu-btn"
+            onClick={() => setMenuOpen(true)}
+            aria-label="Open menu"
+            aria-expanded={menuOpen}
+          >
+            <Menu size={22} />
+          </button>
+        )}
+
+        <img src={logo} alt="MK4 Auto Care" className="mobile-header-logo" />
+
+        <div className="mobile-header-title">
+          <span>MK4 Auto Care</span>
+          <strong>{PAGE_TITLES[currentPage] || "Carwash Point of Sale"}</strong>
+        </div>
+      </header>
+
+      {hasBottomNav && (
+        <nav className="bottom-nav" aria-label="Pages">
+          {navItems.map(({ page, short, icon: Icon }) => (
+            <button
+              key={page}
+              type="button"
+              className={currentPage === page ? "active" : ""}
+              aria-current={currentPage === page ? "page" : undefined}
+              onClick={() => goToPageFromBottomBar(page)}
+            >
+              <Icon size={21} />
+              <span>{short}</span>
+            </button>
+          ))}
+        </nav>
+      )}
+
+      {menuOpen && isLoggedIn && (
+        <div className="mobile-drawer-backdrop" onClick={() => setMenuOpen(false)}>
+          <aside
+            className="mobile-drawer"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Menu"
+          >
+            <div className="mobile-drawer-top">
+              <div className="brand">
+                <div className="brand-logo-wrap">
+                  <img src={logo} alt="MK4 Auto Care" />
+                </div>
+                <div className="brand-text">
+                  <h1>MK4 Auto Care</h1>
+                  <p>Carwash Point of Sale</p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="sidebar-toggle"
+                onClick={() => setMenuOpen(false)}
+                aria-label="Close menu"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {access?.installed && access.role && (
+              <div className="signed-in-as">
+                {access.name}
+                <span>{ROLE_LABELS[access.role]}</span>
+              </div>
+            )}
+
+            <button type="button" className="logout-btn" onClick={logoutFromMenu}>
+              <LogOut size={18} />
+              Logout
+            </button>
+          </aside>
+        </div>
+      )}
 
       <main className="main-content">
         <header className="topbar">
