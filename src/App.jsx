@@ -3,6 +3,7 @@ import {
   BarChart3,
   ClipboardList,
   Droplets,
+  KeyRound,
   LayoutDashboard,
   UsersRound,
   LogIn,
@@ -26,6 +27,7 @@ const loadPage = {
   dashboard: () => import("./components/AdminDashboard"),
   records: () => import("./components/SalesRecords"),
   workers: () => import("./components/WorkerManagement"),
+  logins: () => import("./components/LoginsManagement"),
   services: () => import("./components/ServicesManagement"),
 };
 
@@ -33,6 +35,7 @@ const WorkerForm = lazy(loadPage.form);
 const AdminDashboard = lazy(loadPage.dashboard);
 const SalesRecords = lazy(loadPage.records);
 const WorkerManagement = lazy(loadPage.workers);
+const LoginsManagement = lazy(loadPage.logins);
 const ServicesManagement = lazy(loadPage.services);
 
 /*
@@ -113,6 +116,7 @@ const NAV = [
   { page: "dashboard", label: "Admin Dashboard", icon: LayoutDashboard },
   { page: "records", label: "Sales Records", icon: BarChart3 },
   { page: "workers", label: "Employees", icon: UsersRound },
+  { page: "logins", label: "Logins", icon: KeyRound },
   { page: "services", label: "Services", icon: Droplets },
   { page: "login", label: "Login", icon: LogIn },
 ];
@@ -122,6 +126,7 @@ const PAGE_TITLES = {
   dashboard: "Admin Analytics Dashboard",
   records: "Sales Order Records",
   workers: "Employees and Commission",
+  logins: "Staff Logins",
   services: "Services and Pricing",
   login: "Staff Login",
 };
@@ -439,6 +444,16 @@ export default function App() {
     }
   }
 
+  // After the Logins page moves an employee onto a login, so the Employees
+  // page shows their new Login Email.
+  async function refreshWorkers() {
+    try {
+      setWorkers(await db.fetchWorkers());
+    } catch (error) {
+      console.error("Could not reload the employees", error);
+    }
+  }
+
   function deleteWorker(workerId) {
     const worker = workers.find((item) => item.id === workerId);
     if (!worker) return;
@@ -739,6 +754,14 @@ export default function App() {
                 onUpdateCommissionSettings={setCommissionSettings}
                 rolesOn={Boolean(access?.installed)}
                 manageAdmins={can.manageAdmins}
+              />
+            )}
+
+            {currentPage === "logins" && (
+              <LoginsManagement
+                currentUserId={session?.user?.id}
+                onSignedOutSelf={handleLogout}
+                onEmployeesChanged={refreshWorkers}
               />
             )}
           </Suspense>

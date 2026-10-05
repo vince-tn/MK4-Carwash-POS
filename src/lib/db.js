@@ -381,6 +381,47 @@ export async function fetchMyEmployees() {
   return (data || []).map(toAppWorker);
 }
 
+/* ------------------------------------------------------------------ logins */
+
+/*
+ * The admin Logins page: list, create, change password, log out everywhere,
+ * delete. Creating logins and setting passwords needs Supabase's secret key,
+ * so this goes through the admin-logins Edge Function
+ * (supabase/functions/admin-logins), which refuses anyone but an admin.
+ *
+ * Before that function is deployed the call gets a 404 or no answer at all,
+ * and the error carries notSetUp so the page can say what to do.
+ */
+export async function manageLogins(action, args = {}) {
+  const { data, error } = await supabase.functions.invoke("admin-logins", {
+    body: { action, ...args },
+  });
+
+  if (!error) return data;
+
+  if (error.name === "FunctionsHttpError") {
+    const response = error.context;
+    const body = await response.json().catch(() => null);
+
+    // The function's own errors have "error"; Supabase's gateway, which
+    // answers when the function is missing, uses "message".
+    if (!body?.error && response.status === 404) throw notSetUp();
+    throw new Error(
+      body?.error || body?.message || `Login management failed (${response.status}).`
+    );
+  }
+
+  throw notSetUp();
+}
+
+function notSetUp() {
+  const error = new Error(
+    "Could not reach login management. Check the connection; if it has never worked, it has not been set up yet."
+  );
+  error.notSetUp = true;
+  return error;
+}
+
 /* ----------------------------------------------------------------- workers */
 
 function toAppWorker(row) {

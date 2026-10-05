@@ -1712,3 +1712,28 @@ td {
   padding: 0;
   min-width: 0;
 }
+
+/* --- Logins page (admins) --- */
+
+.login-notice {
+  background: rgba(15, 159, 110, 0.08);
+  border: 1px solid rgba(15, 159, 110, 0.3);
+  color: #065f46;
+  padding: 14px 16px;
+  border-radius: 16px;
+  font-weight: 800;
+}
+
+.login-used-by {
+  margin: 0 0 16px;
+}
+
+.login-password-form {
+  display: grid;
+  gap: 14px;
+  max-width: 460px;
+}
+
+.check-label.login-wrap {
+  white-space: normal;
+}

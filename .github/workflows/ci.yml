@@ -15,9 +15,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 24 runs TypeScript directly, which the Edge Function's test needs.
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - run: npm ci
