@@ -25,6 +25,7 @@ function createBlankService(pricingData) {
 export default function WorkerForm({
   onAddOrder,
   workers,
+  chooseWorkerLabel = "Select your name",
   commissionSettings,
   pricingData,
   addOns,
@@ -521,7 +522,7 @@ export default function WorkerForm({
               >
                 {activeWorkers.length > 1 && (
                   <option value="" disabled>
-                    Select your name
+                    {chooseWorkerLabel}
                   </option>
                 )}
                 {activeWorkers.map((worker) => (

@@ -19,7 +19,7 @@ import AuthPage from "./components/AuthPage";
 import ConfirmModal from "./components/ConfirmModal";
 import { buildDefaultPricing } from "./data/pricing";
 import * as db from "./lib/db";
-import { accessFor, ROLE_LABELS } from "./lib/access";
+import { accessFor, isSalesWorker, ROLE_LABELS } from "./lib/access";
 
 // Each page is a separate download, fetched the first time it is needed and
 // prefetched once the login's role is known. A worker's phone never
@@ -839,7 +839,14 @@ export default function App() {
                  */
                 key={pricing.categories.length ? "priced" : "empty"}
                 onAddOrder={addOrder}
-                workers={workers}
+                // A secretary's list holds every employee; the form offers
+                // only workers. A worker login's list is workers already.
+                workers={workers.filter(isSalesWorker)}
+                chooseWorkerLabel={
+                  access?.role === "secretary"
+                    ? "Select the worker"
+                    : "Select your name"
+                }
                 commissionSettings={commissionSettings}
                 pricingData={pricing.categories}
                 addOns={pricing.addOns}

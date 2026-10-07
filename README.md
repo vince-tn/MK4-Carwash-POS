@@ -14,7 +14,7 @@ Everyone logs in. The role on the employee's record decides what opens:
 | Role | Opens | Login |
 |---|---|---|
 | Admin | Dashboard, Sales Records, Employees, Logins, Services | their own |
-| Secretary | Sales Records, Employees | shared `secretary@mk4.pos` |
+| Secretary | Worker Form (for any worker), Sales Records, Employees | shared `secretary@mk4.pos` |
 | Worker | Worker Form; the sale is filed under the name they pick | shared `worker@mk4.pos` |
 
 An employee's **Login Email** links them to a login. A Worker or Secretary

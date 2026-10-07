@@ -12,7 +12,7 @@ test("each role opens exactly the pages the client specified", () => {
     ["before roles, signed in", legacy, true, ["form", "dashboard", "records", "workers", "services"], "dashboard"],
     ["signed out", role(null), false, ["login"], "login"],
     ["admin", role("admin"), true, ["dashboard", "records", "workers", "logins", "services"], "dashboard"],
-    ["secretary", role("secretary"), true, ["records", "workers"], "records"],
+    ["secretary", role("secretary"), true, ["form", "records", "workers"], "records"],
     ["worker", role("worker"), true, ["form"], "form"],
     ["login with no active employee", role(null), true, [], null],
   ];
@@ -32,6 +32,8 @@ test("each role loads and edits only what it can open", () => {
   assert.equal(accessFor(role("secretary"), true).editPricing, false);
   assert.equal(accessFor(role("secretary"), true).manageAdmins, false);
   assert.equal(accessFor(role("secretary"), true).editCommission, true);
+  assert.equal(accessFor(role("secretary"), true).loadPricing, true);
+  assert.equal(accessFor(role("secretary"), true).seed, false);
   assert.equal(accessFor(role(null), false).loadPricing, false);
   assert.equal(accessFor(legacy, false).loadWorkers, "public");
 });
