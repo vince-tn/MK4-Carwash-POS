@@ -217,7 +217,10 @@ export async function handle(body: unknown, deps: Deps) {
 
 // Only runs on Supabase (Deno). The tests import handle() above without it.
 if (typeof Deno !== "undefined") {
+  // The addresses the app is opened at. The vercel.app one still works, so
+  // old bookmarks keep their Logins page.
   const ALLOWED_ORIGINS = [
+    "https://mk4.kimberlyglazing.ph",
     "https://mk-4-carwash-pos.vercel.app",
     "http://localhost:5173",
     "http://localhost:4173",

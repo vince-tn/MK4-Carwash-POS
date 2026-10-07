@@ -3,7 +3,7 @@
 Point of sale for MK4 Auto Care: workers record each car on the Worker Form,
 the office follows sales, commissions and staff.
 
-- Live: https://mk-4-carwash-pos.vercel.app
+- Live: https://mk4.kimberlyglazing.ph (also https://mk-4-carwash-pos.vercel.app)
 - Frontend: React 19 + Vite 8, deployed by Vercel on every push to `main`
 - Backend: Supabase (Postgres, Auth, Storage), project `vsxwwgglvckbjxvifxuw`
 
