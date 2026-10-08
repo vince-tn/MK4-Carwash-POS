@@ -307,6 +307,15 @@ function PaymentEditModal({ order, onClose, onSave }) {
           <label className="check-label">
             <input
               type="checkbox"
+              checked={paymentForm.paymentEnabled.bank}
+              onChange={() => togglePayment("bank")}
+            />
+            Bank
+          </label>
+
+          <label className="check-label">
+            <input
+              type="checkbox"
               checked={paymentForm.paymentEnabled.discount}
               onChange={() => togglePayment("discount")}
             />
