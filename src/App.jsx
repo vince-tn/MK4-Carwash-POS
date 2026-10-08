@@ -416,7 +416,8 @@ export default function App() {
       (paymentUpdate.paymentEnabled?.gcash ? Number(paymentUpdate.gcash) || 0 : 0) +
       (paymentUpdate.paymentEnabled?.credit
         ? Number(paymentUpdate.credit) || 0
-        : 0);
+        : 0) +
+      (paymentUpdate.paymentEnabled?.bank ? Number(paymentUpdate.bank) || 0 : 0);
 
     try {
       const saved = await db.updateOrderPayment(existing.dbId, {

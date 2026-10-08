@@ -1,5 +1,6 @@
 import { Fragment, useMemo, useState } from "react";
 import { Download } from "lucide-react";
+import { summarise } from "../lib/totals";
 import {
   peso,
   getPeriodKey,
@@ -7,14 +8,6 @@ import {
   periodOptions,
   downloadCSV,
 } from "../lib/reportUtils";
-
-function sumPayment(orders, method) {
-  return orders.reduce(
-    (sum, order) =>
-      sum + (order.paymentEnabled?.[method] ? Number(order[method]) || 0 : 0),
-    0
-  );
-}
 
 function describeServices(order) {
   const services = (order.services || [])
@@ -68,25 +61,25 @@ export default function DashboardReport({ orders, mode }) {
         { label: "Cash", money: true },
         { label: "GCash", money: true },
         { label: "Credit", money: true },
+        { label: "Bank", money: true },
         { label: "Discounts", money: true },
         { label: "Total Sales", money: true },
       ];
 
       const rows = periodKeys.map((key) => {
-        const periodOrders = grouped[key];
+        // Same helper the dashboard tiles and Sales Records use, so Total
+        // Sales here is money taken and cannot drift from either of them.
+        const t = summarise(grouped[key]);
 
         return [
           formatPeriodLabel(key, period),
-          periodOrders.length,
-          sumPayment(periodOrders, "cash"),
-          sumPayment(periodOrders, "gcash"),
-          sumPayment(periodOrders, "credit"),
-          sumPayment(periodOrders, "discount"),
-          // Money actually taken, matching the Total Sales tile this report
-          // expands from: the three payment columns to the left added up.
-          sumPayment(periodOrders, "cash") +
-            sumPayment(periodOrders, "gcash") +
-            sumPayment(periodOrders, "credit"),
+          t.cars,
+          t.cash,
+          t.gcash,
+          t.credit,
+          t.bank,
+          t.discount,
+          t.sales,
         ];
       });
 

@@ -54,14 +54,17 @@ export default function WorkerForm({
       cash: false,
       gcash: false,
       credit: false,
+      bank: false,
       discount: false,
     },
     cash: "",
     gcash: "",
     credit: "",
+    bank: "",
     discount: "",
     gcashRef: "",
     creditRef: "",
+    bankRef: "",
     notes: "",
     photoName: "",
     photoPath: "",
@@ -172,7 +175,8 @@ export default function WorkerForm({
   const totalPaid =
     (form.paymentEnabled.cash ? Number(form.cash) || 0 : 0) +
     (form.paymentEnabled.gcash ? Number(form.gcash) || 0 : 0) +
-    (form.paymentEnabled.credit ? Number(form.credit) || 0 : 0);
+    (form.paymentEnabled.credit ? Number(form.credit) || 0 : 0) +
+    (form.paymentEnabled.bank ? Number(form.bank) || 0 : 0);
 
   const balance = total - totalPaid;
 
@@ -199,6 +203,7 @@ export default function WorkerForm({
       // A reference number is meaningless once its method is unchecked.
       if (turningOff && name === "gcash") next.gcashRef = "";
       if (turningOff && name === "credit") next.creditRef = "";
+      if (turningOff && name === "bank") next.bankRef = "";
 
       return next;
     });
@@ -315,14 +320,17 @@ export default function WorkerForm({
         cash: false,
         gcash: false,
         credit: false,
+        bank: false,
         discount: false,
       },
       cash: "",
       gcash: "",
       credit: "",
+      bank: "",
       discount: "",
       gcashRef: "",
       creditRef: "",
+      bankRef: "",
       notes: "",
       photoName: "",
       photoPath: "",
@@ -726,6 +734,15 @@ export default function WorkerForm({
             <label className="check-label">
               <input
                 type="checkbox"
+                checked={form.paymentEnabled.bank}
+                onChange={() => togglePayment("bank")}
+              />
+              Bank
+            </label>
+
+            <label className="check-label">
+              <input
+                type="checkbox"
                 checked={form.paymentEnabled.discount}
                 onChange={() => togglePayment("discount")}
               />
@@ -765,6 +782,16 @@ export default function WorkerForm({
             </label>
 
             <label>
+              Bank Amount
+              <input
+                type="number"
+                disabled={!form.paymentEnabled.bank}
+                value={form.bank}
+                onChange={(e) => updateField("bank", e.target.value)}
+              />
+            </label>
+
+            <label>
               Discount Amount
               <input
                 type="number"
@@ -791,9 +818,21 @@ export default function WorkerForm({
                 Credit Reference Number
                 <input
                   type="text"
-                  placeholder="Bank / credit reference"
+                  placeholder="Credit reference"
                   value={form.creditRef}
                   onChange={(e) => updateField("creditRef", e.target.value)}
+                />
+              </label>
+            )}
+
+            {form.paymentEnabled.bank && (
+              <label>
+                Bank Reference Number
+                <input
+                  type="text"
+                  placeholder="Bank transfer reference"
+                  value={form.bankRef}
+                  onChange={(e) => updateField("bankRef", e.target.value)}
                 />
               </label>
             )}
@@ -896,7 +935,9 @@ export default function WorkerForm({
         <div className="receipt-row">
           <span>Ref No.</span>
           <strong>
-              {[form.gcashRef, form.creditRef].filter(Boolean).join(" / ") ||
+              {[form.gcashRef, form.creditRef, form.bankRef]
+                .filter(Boolean)
+                .join(" / ") ||
                 "—"}
             </strong>
         </div>

@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { supabase } from "../lib/supabaseClient";
+import { summarise } from "../lib/totals";
 import { isSalesWorker } from "../lib/access";
 
 const peso = new Intl.NumberFormat("en-PH", {
@@ -37,6 +38,7 @@ function refSummary(order) {
 
   if (order.gcashRef) parts.push(`GCash: ${order.gcashRef}`);
   if (order.creditRef) parts.push(`Credit: ${order.creditRef}`);
+  if (order.bankRef) parts.push(`Bank: ${order.bankRef}`);
   if (!parts.length && order.referenceNo) parts.push(order.referenceNo);
 
   return parts.length ? parts.join(" / ") : "—";
@@ -113,6 +115,7 @@ function getPaymentMethods(order) {
   if (order.paymentEnabled?.cash) methods.push("cash");
   if (order.paymentEnabled?.gcash) methods.push("gcash");
   if (order.paymentEnabled?.credit) methods.push("credit");
+  if (order.paymentEnabled?.bank) methods.push("bank");
   if (order.paymentEnabled?.discount) methods.push("discount");
 
   return methods;
@@ -160,14 +163,17 @@ function PaymentEditModal({ order, onClose, onSave }) {
       cash: Boolean(order.paymentEnabled?.cash),
       gcash: Boolean(order.paymentEnabled?.gcash),
       credit: Boolean(order.paymentEnabled?.credit),
+      bank: Boolean(order.paymentEnabled?.bank),
       discount: Boolean(order.paymentEnabled?.discount),
     },
     cash: order.cash || "",
     gcash: order.gcash || "",
     credit: order.credit || "",
+    bank: order.bank || "",
     discount: order.discount || "",
     gcashRef: order.gcashRef || order.referenceNo || "",
     creditRef: order.creditRef || "",
+    bankRef: order.bankRef || "",
     paymentNotes: order.paymentNotes || "",
   });
 
@@ -183,7 +189,8 @@ function PaymentEditModal({ order, onClose, onSave }) {
   const updatedPaid =
     (paymentForm.paymentEnabled.cash ? Number(paymentForm.cash) || 0 : 0) +
     (paymentForm.paymentEnabled.gcash ? Number(paymentForm.gcash) || 0 : 0) +
-    (paymentForm.paymentEnabled.credit ? Number(paymentForm.credit) || 0 : 0);
+    (paymentForm.paymentEnabled.credit ? Number(paymentForm.credit) || 0 : 0) +
+    (paymentForm.paymentEnabled.bank ? Number(paymentForm.bank) || 0 : 0);
 
   const updatedBalance = updatedTotal - updatedPaid;
 
@@ -209,6 +216,7 @@ function PaymentEditModal({ order, onClose, onSave }) {
 
       if (turningOff && method === "gcash") next.gcashRef = "";
       if (turningOff && method === "credit") next.creditRef = "";
+      if (turningOff && method === "bank") next.bankRef = "";
 
       return next;
     });
@@ -338,6 +346,16 @@ function PaymentEditModal({ order, onClose, onSave }) {
           </label>
 
           <label>
+            Bank Amount
+            <input
+              type="number"
+              disabled={!paymentForm.paymentEnabled.bank}
+              value={paymentForm.bank}
+              onChange={(e) => updateField("bank", e.target.value)}
+            />
+          </label>
+
+          <label>
             Discount Amount
             <input
               type="number"
@@ -366,7 +384,19 @@ function PaymentEditModal({ order, onClose, onSave }) {
                 type="text"
                 value={paymentForm.creditRef}
                 onChange={(e) => updateField("creditRef", e.target.value)}
-                placeholder="Bank / credit reference"
+                placeholder="Credit reference"
+              />
+            </label>
+          )}
+
+          {paymentForm.paymentEnabled.bank && (
+            <label>
+              Bank Reference Number
+              <input
+                type="text"
+                value={paymentForm.bankRef}
+                onChange={(e) => updateField("bankRef", e.target.value)}
+                placeholder="Bank transfer reference"
               />
             </label>
           )}
@@ -472,6 +502,7 @@ export default function SalesRecords({
           order.referenceNo?.toLowerCase(),
           order.gcashRef?.toLowerCase(),
           order.creditRef?.toLowerCase(),
+          order.bankRef?.toLowerCase(),
           order.services
             ?.map((service) => `${service.category} ${service.size}`)
             .join(" ")
@@ -523,6 +554,15 @@ export default function SalesRecords({
 
     return sortOrders(filtered, sortBy);
   }, [orders, searchFields, deferredSearch, filters, sortBy]);
+
+  // Totals for the rows the filters are showing, not just the ones drawn:
+  // the list renders a page at a time, so visibleOrders would undercount.
+  const summary = useMemo(
+    () => summarise(filteredAndSortedOrders),
+    [filteredAndSortedOrders]
+  );
+
+  const isFiltered = filteredAndSortedOrders.length !== orders.length;
 
   // How many rows are drawn, for this search, sort and filter. A new one
   // starts again from the top.
@@ -627,6 +667,12 @@ export default function SalesRecords({
               {order.paymentEnabled?.credit && (
                 <>
                   Credit: {peso.format(Number(order.credit) || 0)}
+                  <br />
+                </>
+              )}
+              {order.paymentEnabled?.bank && (
+                <>
+                  Bank: {peso.format(Number(order.bank) || 0)}
                   <br />
                 </>
               )}
@@ -833,6 +879,7 @@ export default function SalesRecords({
       "Cash",
       "GCash",
       "Credit",
+      "Bank",
       "Discount",
       "Total",
       "Paid",
@@ -841,6 +888,7 @@ export default function SalesRecords({
       "Commission Rule",
       "GCash Reference",
       "Credit Reference",
+      "Bank Reference",
       "Payment Notes",
       "Payment Updated At",
       "Photo Proof",
@@ -872,6 +920,7 @@ export default function SalesRecords({
         order.paymentEnabled?.cash ? order.cash : "",
         order.paymentEnabled?.gcash ? order.gcash : "",
         order.paymentEnabled?.credit ? order.credit : "",
+        order.paymentEnabled?.bank ? order.bank : "",
         order.paymentEnabled?.discount ? order.discount : "",
         order.total,
         order.totalPaid,
@@ -880,6 +929,7 @@ export default function SalesRecords({
         order.commissionLabel,
         order.gcashRef || order.referenceNo,
         order.creditRef,
+        order.bankRef,
         order.paymentNotes,
         order.paymentUpdatedAt,
         order.photoName,
@@ -999,7 +1049,7 @@ export default function SalesRecords({
           <div>
             <strong>Payment Filter</strong>
             <div className="filter-checks">
-              {["cash", "gcash", "credit", "discount"].map((method) => (
+              {["cash", "gcash", "credit", "bank", "discount"].map((method) => (
                 <label className="check-label compact-check" key={method}>
                   <input
                     type="checkbox"
@@ -1022,6 +1072,48 @@ export default function SalesRecords({
           <button className="ghost-btn" onClick={clearFilters}>
             Clear Filters
           </button>
+        </div>
+      </div>
+
+      <div className="records-summary">
+        <div className="records-summary-main">
+          <span>Total Sales</span>
+          <strong>{peso.format(summary.sales)}</strong>
+          <small>
+            {summary.cars} {summary.cars === 1 ? "car" : "cars"}
+            {isFiltered ? " in this view" : " all time"}
+          </small>
+        </div>
+
+        <div className="records-summary-grid">
+          <div>
+            <span>Cash</span>
+            <strong>{peso.format(summary.cash)}</strong>
+          </div>
+          <div>
+            <span>GCash</span>
+            <strong>{peso.format(summary.gcash)}</strong>
+          </div>
+          <div>
+            <span>Credit</span>
+            <strong>{peso.format(summary.credit)}</strong>
+          </div>
+          <div>
+            <span>Bank</span>
+            <strong>{peso.format(summary.bank)}</strong>
+          </div>
+          <div>
+            <span>Discounts</span>
+            <strong>{peso.format(summary.discount)}</strong>
+          </div>
+          <div>
+            <span>Commission</span>
+            <strong>{peso.format(summary.commission)}</strong>
+          </div>
+          <div className={summary.balance > 0 ? "is-owed" : ""}>
+            <span>Unpaid</span>
+            <strong>{peso.format(summary.balance)}</strong>
+          </div>
         </div>
       </div>
 

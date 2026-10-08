@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Download } from "lucide-react";
+import { moneyTaken, summarise } from "../lib/totals";
 import {
   peso,
   csvSafe,
@@ -16,11 +17,61 @@ export default function WorkerReports({
 }) {
   const [view, setView] = useState(initialView);
   const [period, setPeriod] = useState("day");
+  const [openPeriod, setOpenPeriod] = useState(null);
   const [workerId, setWorkerId] = useState(
     initialWorkerId || workers[0]?.id || ""
   );
 
   const selectedWorker = workers.find((worker) => worker.id === workerId);
+
+  function choosePeriod(value) {
+    setPeriod(value);
+    setOpenPeriod(null);
+  }
+
+  function chooseView(value) {
+    setView(value);
+    setOpenPeriod(null);
+  }
+
+  // What a period was made of: which services were sold and who sold them.
+  function breakdownFor(row) {
+    const services = new Map();
+    const byWorker = new Map();
+
+    for (const order of row.orders) {
+      const taken = moneyTaken(order);
+
+      for (const service of order.services || []) {
+        const name = [service.category, service.size]
+          .filter(Boolean)
+          .join(" - ");
+        const entry = services.get(name) || { name, count: 0, amount: 0 };
+        entry.count += 1;
+        entry.amount += Number(service.price) || 0;
+        services.set(name, entry);
+      }
+
+      for (const addOn of order.selectedAddOns || []) {
+        const name = `${addOn} (add-on)`;
+        const entry = services.get(name) || { name, count: 0, amount: 0 };
+        entry.count += 1;
+        services.set(name, entry);
+      }
+
+      const who = order.washerName || "Unknown";
+      const worker = byWorker.get(who) || { name: who, cars: 0, sales: 0 };
+      worker.cars += 1;
+      worker.sales += taken;
+      byWorker.set(who, worker);
+    }
+
+    return {
+      services: [...services.values()].sort((a, b) => b.amount - a.amount),
+      workers: [...byWorker.values()].sort((a, b) => b.sales - a.sales),
+      totals: summarise(row.orders),
+    };
+  }
 
   const relevantOrders = useMemo(() => {
     if (view === "individual") {
@@ -36,16 +87,25 @@ export default function WorkerReports({
       const key = getPeriodKey(order.date, period);
 
       if (!map[key]) {
-        map[key] = { key, cars: 0, sales: 0, commission: 0, workerTotals: {} };
+        map[key] = {
+          key,
+          cars: 0,
+          sales: 0,
+          commission: 0,
+          workerTotals: {},
+          orders: [],
+        };
       }
 
+      const taken = moneyTaken(order);
+
       map[key].cars += 1;
-      map[key].sales += Number(order.total || 0);
+      map[key].sales += taken;
       map[key].commission += Number(order.commission || 0);
+      map[key].orders.push(order);
 
       const name = order.washerName || "Unknown";
-      map[key].workerTotals[name] =
-        (map[key].workerTotals[name] || 0) + Number(order.total || 0);
+      map[key].workerTotals[name] = (map[key].workerTotals[name] || 0) + taken;
     });
 
     return Object.values(map)
@@ -80,7 +140,7 @@ export default function WorkerReports({
       }
 
       map[name].cars += 1;
-      map[name].sales += Number(order.total || 0);
+      map[name].sales += moneyTaken(order);
       map[name].commission += Number(order.commission || 0);
     });
 
@@ -179,14 +239,14 @@ export default function WorkerReports({
           <button
             type="button"
             className={view === "summary" ? "active" : ""}
-            onClick={() => setView("summary")}
+            onClick={() => chooseView("summary")}
           >
             Summary
           </button>
           <button
             type="button"
             className={view === "individual" ? "active" : ""}
-            onClick={() => setView("individual")}
+            onClick={() => chooseView("individual")}
           >
             Individual
           </button>
@@ -198,7 +258,7 @@ export default function WorkerReports({
               type="button"
               key={option.value}
               className={period === option.value ? "active" : ""}
-              onClick={() => setPeriod(option.value)}
+              onClick={() => choosePeriod(option.value)}
             >
               {option.label}
             </button>
@@ -237,17 +297,104 @@ export default function WorkerReports({
               </tr>
             </thead>
             <tbody>
-              {periodRows.map((row) => (
-                <tr key={row.key}>
-                  <td>
-                    <strong>{formatPeriodLabel(row.key, period)}</strong>
-                  </td>
-                  <td>{row.cars}</td>
-                  <td>{peso.format(row.sales)}</td>
-                  <td>{peso.format(row.commission)}</td>
-                  {view === "summary" && <td>{row.topWorker}</td>}
-                </tr>
-              ))}
+              {periodRows.map((row) => {
+                const isOpen = openPeriod === row.key;
+                const detail = isOpen ? breakdownFor(row) : null;
+                const columnCount = view === "summary" ? 5 : 4;
+
+                return (
+                  <Fragment key={row.key}>
+                    <tr
+                      className={`report-row${isOpen ? " is-open" : ""}`}
+                      onClick={() =>
+                        setOpenPeriod((prev) =>
+                          prev === row.key ? null : row.key
+                        )
+                      }
+                      aria-expanded={isOpen}
+                    >
+                      <td>
+                        <strong>
+                          <span className="report-caret">
+                            {isOpen ? "▾" : "▸"}
+                          </span>
+                          {formatPeriodLabel(row.key, period)}
+                        </strong>
+                      </td>
+                      <td>{row.cars}</td>
+                      <td>{peso.format(row.sales)}</td>
+                      <td>{peso.format(row.commission)}</td>
+                      {view === "summary" && <td>{row.topWorker}</td>}
+                    </tr>
+
+                    {isOpen && (
+                      <tr className="report-detail-row">
+                        <td colSpan={columnCount}>
+                          <div className="report-detail">
+                            <div className="record-detail-grid">
+                              <div>
+                                <h4>Services sold</h4>
+                                <dl>
+                                  {detail.services.length === 0 && (
+                                    <>
+                                      <dt>No services recorded</dt>
+                                      <dd>—</dd>
+                                    </>
+                                  )}
+                                  {detail.services.map((item) => (
+                                    <Fragment key={item.name}>
+                                      <dt>
+                                        {item.name} x{item.count}
+                                      </dt>
+                                      <dd>
+                                        {item.amount
+                                          ? peso.format(item.amount)
+                                          : "—"}
+                                      </dd>
+                                    </Fragment>
+                                  ))}
+                                </dl>
+                              </div>
+
+                              <div>
+                                <h4>Where the sales came from</h4>
+                                <dl>
+                                  {detail.workers.map((worker) => (
+                                    <Fragment key={worker.name}>
+                                      <dt>
+                                        {worker.name} ({worker.cars})
+                                      </dt>
+                                      <dd>{peso.format(worker.sales)}</dd>
+                                    </Fragment>
+                                  ))}
+                                </dl>
+                              </div>
+
+                              <div>
+                                <h4>How it was paid</h4>
+                                <dl>
+                                  <dt>Cash</dt>
+                                  <dd>{peso.format(detail.totals.cash)}</dd>
+                                  <dt>GCash</dt>
+                                  <dd>{peso.format(detail.totals.gcash)}</dd>
+                                  <dt>Credit</dt>
+                                  <dd>{peso.format(detail.totals.credit)}</dd>
+                                  <dt>Bank</dt>
+                                  <dd>{peso.format(detail.totals.bank)}</dd>
+                                  <dt>Discounts</dt>
+                                  <dd>{peso.format(detail.totals.discount)}</dd>
+                                  <dt>Unpaid</dt>
+                                  <dd>{peso.format(detail.totals.balance)}</dd>
+                                </dl>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
 
               <tr className="report-total-row">
                 <td>Total</td>

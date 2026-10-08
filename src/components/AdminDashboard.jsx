@@ -16,6 +16,7 @@ import WorkerReports from "./WorkerReports";
 import DashboardReport from "./DashboardReport";
 import { localDateString } from "../lib/reportUtils";
 import { isSalesWorker } from "../lib/access";
+import { amountFor, moneyTaken } from "../lib/totals";
 
 const peso = new Intl.NumberFormat("en-PH", {
   style: "currency",
@@ -33,6 +34,7 @@ export default function AdminDashboard({ orders, workers }) {
       cash: 0,
       gcash: 0,
       credit: 0,
+      bank: 0,
       discount: 0,
       commission: 0,
     };
@@ -40,12 +42,11 @@ export default function AdminDashboard({ orders, workers }) {
     const workerMap = {};
 
     orders.forEach((order) => {
-      if (order.paymentEnabled?.cash) totals.cash += Number(order.cash) || 0;
-      if (order.paymentEnabled?.gcash) totals.gcash += Number(order.gcash) || 0;
-      if (order.paymentEnabled?.credit) totals.credit += Number(order.credit) || 0;
-      if (order.paymentEnabled?.discount) {
-        totals.discount += Number(order.discount) || 0;
-      }
+      totals.cash += amountFor(order, "cash");
+      totals.gcash += amountFor(order, "gcash");
+      totals.credit += amountFor(order, "credit");
+      totals.bank += amountFor(order, "bank");
+      totals.discount += amountFor(order, "discount");
       totals.commission += Number(order.commission || 0);
 
       order.services?.forEach((service) => {
@@ -65,14 +66,14 @@ export default function AdminDashboard({ orders, workers }) {
 
       workerMap[order.washerName].cars += 1;
       workerMap[order.washerName].commission += Number(order.commission || 0);
-      workerMap[order.washerName].sales += Number(order.total || 0);
+      workerMap[order.washerName].sales += moneyTaken(order);
     });
 
     // Total Sales is money actually taken: the Cash, GCash and Credit
     // totals added up, which is what the shop sheet means by the term. It
     // deliberately leaves out any balance still owed. The discount was never
     // part of it either way -- order.total was already net of it.
-    totals.sales = totals.cash + totals.gcash + totals.credit;
+    totals.sales = totals.cash + totals.gcash + totals.credit + totals.bank;
 
     return {
       ...totals,
@@ -89,6 +90,7 @@ export default function AdminDashboard({ orders, workers }) {
     cash: cashSales,
     gcash: gcashSales,
     credit: creditSales,
+    bank: bankSales,
     discount: totalDiscount,
     commission: totalCommission,
     washerChartData,
@@ -176,6 +178,7 @@ export default function AdminDashboard({ orders, workers }) {
         />
         <StatCard title="GCash Sales" value={peso.format(gcashSales)} />
         <StatCard title="Credit Sales" value={peso.format(creditSales)} />
+        <StatCard title="Bank Sales" value={peso.format(bankSales)} />
         <StatCard title="Discounts" value={peso.format(totalDiscount)} />
         <StatCard title="Cash Sales" value={peso.format(cashSales)} />
       </div>
