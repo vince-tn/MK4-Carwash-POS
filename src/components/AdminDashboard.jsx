@@ -40,7 +40,6 @@ export default function AdminDashboard({ orders, workers }) {
     const workerMap = {};
 
     orders.forEach((order) => {
-      totals.sales += Number(order.total || 0);
       if (order.paymentEnabled?.cash) totals.cash += Number(order.cash) || 0;
       if (order.paymentEnabled?.gcash) totals.gcash += Number(order.gcash) || 0;
       if (order.paymentEnabled?.credit) totals.credit += Number(order.credit) || 0;
@@ -68,6 +67,12 @@ export default function AdminDashboard({ orders, workers }) {
       workerMap[order.washerName].commission += Number(order.commission || 0);
       workerMap[order.washerName].sales += Number(order.total || 0);
     });
+
+    // Total Sales is money actually taken: the Cash, GCash and Credit
+    // totals added up, which is what the shop sheet means by the term. It
+    // deliberately leaves out any balance still owed. The discount was never
+    // part of it either way -- order.total was already net of it.
+    totals.sales = totals.cash + totals.gcash + totals.credit;
 
     return {
       ...totals,

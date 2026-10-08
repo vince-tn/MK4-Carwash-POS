@@ -82,10 +82,11 @@ export default function DashboardReport({ orders, mode }) {
           sumPayment(periodOrders, "gcash"),
           sumPayment(periodOrders, "credit"),
           sumPayment(periodOrders, "discount"),
-          periodOrders.reduce(
-            (sum, order) => sum + Number(order.total || 0),
-            0
-          ),
+          // Money actually taken, matching the Total Sales tile this report
+          // expands from: the three payment columns to the left added up.
+          sumPayment(periodOrders, "cash") +
+            sumPayment(periodOrders, "gcash") +
+            sumPayment(periodOrders, "credit"),
         ];
       });
 
