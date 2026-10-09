@@ -431,13 +431,18 @@ function PaymentEditModal({ order, onClose, onSave }) {
 
 export default function SalesRecords({
   orders,
+  archivedOrders = [],
   workers,
   onUpdateOrderPayment,
-  onDeleteOrder,
+  onArchiveOrder,
+  onRestoreOrder,
 }) {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("newest");
   const [editingPaymentOrder, setEditingPaymentOrder] = useState(null);
+  const [showArchived, setShowArchived] = useState(false);
+
+  const sourceOrders = showArchived ? archivedOrders : orders;
   const [expandedOrder, setExpandedOrder] = useState(null);
 
   const [filters, setFilters] = useState({
@@ -501,7 +506,7 @@ export default function SalesRecords({
   // than for every sale on every keystroke.
   const searchFields = useMemo(() => {
     return new Map(
-      orders.map((order) => [
+      sourceOrders.map((order) => [
         order,
         [
           order.id?.toLowerCase(),
@@ -519,12 +524,12 @@ export default function SalesRecords({
         ],
       ])
     );
-  }, [orders]);
+  }, [sourceOrders]);
 
   const filteredAndSortedOrders = useMemo(() => {
     const query = deferredSearch.toLowerCase();
 
-    const filtered = orders.filter((order) => {
+    const filtered = sourceOrders.filter((order) => {
       const matchesSearch = searchFields
         .get(order)
         .some((field) => field !== undefined && field.includes(query));
@@ -562,7 +567,7 @@ export default function SalesRecords({
     });
 
     return sortOrders(filtered, sortBy);
-  }, [orders, searchFields, deferredSearch, filters, sortBy]);
+  }, [sourceOrders, searchFields, deferredSearch, filters, sortBy]);
 
   // Totals for the rows the filters are showing, not just the ones drawn:
   // the list renders a page at a time, so visibleOrders would undercount.
@@ -571,11 +576,11 @@ export default function SalesRecords({
     [filteredAndSortedOrders]
   );
 
-  const isFiltered = filteredAndSortedOrders.length !== orders.length;
+  const isFiltered = filteredAndSortedOrders.length !== sourceOrders.length;
 
   // How many rows are drawn, for this search, sort and filter. A new one
   // starts again from the top.
-  const listKey = `${deferredSearch}|${sortBy}|${JSON.stringify(filters)}`;
+  const listKey = `${showArchived ? "archived" : "active"}|${deferredSearch}|${sortBy}|${JSON.stringify(filters)}`;
   const [shown, setShown] = useState({ key: listKey, count: ROWS_STEP });
   const shownCount = shown.key === listKey ? shown.count : ROWS_STEP;
   const visibleOrders = useMemo(
@@ -727,16 +732,29 @@ export default function SalesRecords({
                 🖍
               </button>
 
-              <button
-                className="table-action-btn danger"
-                title="Delete this sale"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDeleteOrder(order.id);
-                }}
-              >
-                🗑
-              </button>
+              {showArchived ? (
+                <button
+                  className="table-action-btn"
+                  title="Put this sale back into the records"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRestoreOrder(order.id);
+                  }}
+                >
+                  ↩
+                </button>
+              ) : (
+                <button
+                  className="table-action-btn danger"
+                  title="Archive this sale"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onArchiveOrder(order.id);
+                  }}
+                >
+                  🗄
+                </button>
+              )}
             </td>
           </tr>
 
@@ -863,7 +881,7 @@ export default function SalesRecords({
           );
         })
       ),
-    [visibleOrders, expandedOrder, onDeleteOrder]
+    [visibleOrders, expandedOrder, showArchived, onArchiveOrder, onRestoreOrder]
   );
 
   function exportCSV() {
@@ -983,6 +1001,32 @@ export default function SalesRecords({
         </div>
       </div>
 
+      <div className="records-views">
+        <div className="toggle-group">
+          <button
+            type="button"
+            className={showArchived ? "" : "active"}
+            onClick={() => setShowArchived(false)}
+          >
+            Active
+          </button>
+          <button
+            type="button"
+            className={showArchived ? "active" : ""}
+            onClick={() => setShowArchived(true)}
+          >
+            Archived{archivedOrders.length ? ` (${archivedOrders.length})` : ""}
+          </button>
+        </div>
+
+        {showArchived && (
+          <p className="records-views-note">
+            Archived sales are out of every report and total. Putting one back
+            returns it to the records exactly as it was.
+          </p>
+        )}
+      </div>
+
       <div className="filter-card">
         <div className="filter-top">
           <label>
@@ -1075,7 +1119,7 @@ export default function SalesRecords({
         <div className="filter-footer">
           <span>
             Showing <strong>{filteredAndSortedOrders.length}</strong> of{" "}
-            <strong>{orders.length}</strong> records
+            <strong>{sourceOrders.length}</strong> records
           </span>
 
           <button className="ghost-btn" onClick={clearFilters}>
@@ -1090,7 +1134,11 @@ export default function SalesRecords({
           <strong>{peso.format(summary.sales)}</strong>
           <small>
             {summary.cars} {summary.cars === 1 ? "car" : "cars"}
-            {isFiltered ? " in this view" : " all time"}
+            {showArchived
+              ? " archived"
+              : isFiltered
+                ? " in this view"
+                : " all time"}
           </small>
         </div>
 

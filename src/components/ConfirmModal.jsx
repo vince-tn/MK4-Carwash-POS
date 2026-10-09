@@ -1,7 +1,7 @@
 /*
- * Confirmation for the things that cannot be undone.
+ * Confirmation before something serious.
  *
- * Deliberately not window.confirm: these deletions destroy sales records, and
+ * Deliberately not window.confirm: these actions change sales records, and
  * the figures involved need to be on screen at the moment the decision is
  * made rather than buried in a one-line browser prompt.
  */
@@ -10,6 +10,7 @@ export default function ConfirmModal({
   message,
   details,
   confirmLabel = "Delete",
+  reversible = false,
   onConfirm,
   onClose,
   isBusy = false,
@@ -34,7 +35,11 @@ export default function ConfirmModal({
           </ul>
         )}
 
-        <p className="confirm-warning">This cannot be undone.</p>
+        <p className={reversible ? "confirm-reversible" : "confirm-warning"}>
+          {reversible
+            ? "You can undo this from the Archived view."
+            : "This cannot be undone."}
+        </p>
 
         <div className="confirm-actions">
           <button
@@ -52,7 +57,7 @@ export default function ConfirmModal({
             onClick={onConfirm}
             disabled={isBusy}
           >
-            {isBusy ? "Deleting…" : confirmLabel}
+            {isBusy ? "Working…" : confirmLabel}
           </button>
         </div>
       </div>

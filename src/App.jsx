@@ -175,6 +175,7 @@ export default function App() {
   const [dataState, setDataState] = useState("idle");
   const [dataError, setDataError] = useState("");
   const [saveError, setSaveError] = useState("");
+  const [archivedOrders, setArchivedOrders] = useState([]);
   const [importOffer, setImportOffer] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -212,8 +213,13 @@ export default function App() {
           await db.seedWorkers(INITIAL_WORKERS);
         }
 
-        const [nextWorkers, nextCommission, nextPricing, nextOrders] =
-          await Promise.all([
+        const [
+          nextWorkers,
+          nextCommission,
+          nextPricing,
+          nextOrders,
+          nextArchived,
+        ] = await Promise.all([
             can.loadWorkers === "mine"
               ? db.fetchMyEmployees()
               : can.loadWorkers
@@ -224,10 +230,14 @@ export default function App() {
               : defaultCommissionSettings,
             can.loadPricing ? db.fetchPricing() : EMPTY_PRICING,
             can.loadOrders ? db.fetchOrders() : [],
+            // Archived sales are out of every total; they are only loaded so
+            // the Archived view can show them and put one back.
+            can.loadOrders ? db.fetchArchivedOrders() : [],
           ]);
 
         setAccessState({ key: sessionKey, access: nextAccess });
         setOrders(nextOrders);
+        setArchivedOrders(nextArchived);
         setWorkers(nextWorkers);
         setCommissionSettings(nextCommission);
         setPricing(nextPricing);
@@ -508,26 +518,43 @@ export default function App() {
     });
   }
 
-  function deleteOrder(orderId) {
+  function archiveOrder(orderId) {
     const order = orders.find((item) => item.id === orderId);
     if (!order) return;
 
     setPendingDelete({
       kind: "order",
       id: orderId,
-      title: `Delete ${order.id}?`,
+      title: `Archive ${order.id}?`,
       message:
-        "This removes the sale from the records and from every report and total.",
+        "This takes the sale out of the records and out of every report and total. Nothing is deleted: the sale, its services and its payment proof are all kept and can be put back from the Archived view.",
       details: [
         `${order.plateNumber || "No plate"} on ${order.date}`,
         `${peso.format(Number(order.total || 0))} total, ${peso.format(
           Number(order.totalPaid || 0)
         )} paid`,
         order.washerName ? `Recorded by ${order.washerName}` : null,
-        order.photoPath ? "Its payment proof image is deleted too" : null,
       ].filter(Boolean),
-      confirmLabel: "Delete sale",
+      confirmLabel: "Archive sale",
+      reversible: true,
     });
+  }
+
+  async function restoreOrder(orderId) {
+    const order = archivedOrders.find((item) => item.id === orderId);
+    if (!order) return;
+
+    try {
+      const restored = await db.restoreOrder(order.dbId);
+
+      setArchivedOrders((prev) =>
+        prev.filter((item) => item.id !== orderId)
+      );
+      setOrders((prev) => [restored, ...prev]);
+    } catch (error) {
+      console.error("Could not restore the sale", error);
+      alert(`Could not put that sale back: ${error.message}`);
+    }
   }
 
   async function confirmPendingDelete() {
@@ -553,12 +580,17 @@ export default function App() {
         );
       } else {
         const order = orders.find((item) => item.id === pendingDelete.id);
-        proofPaths = [order.photoPath];
 
-        await db.deleteOrder(order.dbId);
+        // Archiving keeps the proof image: the sale can come back, and it
+        // would come back without its evidence.
+        proofPaths = [];
+
+        const archived = await db.archiveOrder(order.dbId, access?.name || null);
+
         setOrders((prev) =>
           prev.filter((item) => item.id !== pendingDelete.id)
         );
+        setArchivedOrders((prev) => [archived, ...prev]);
       }
 
       setPendingDelete(null);
@@ -587,6 +619,7 @@ export default function App() {
 
     // Do not leave another user's records on screen behind the login wall.
     setOrders([]);
+    setArchivedOrders([]);
     setWorkers([]);
     setDataState("idle");
     setImportOffer(false);
@@ -632,6 +665,7 @@ export default function App() {
           message={pendingDelete.message}
           details={pendingDelete.details}
           confirmLabel={pendingDelete.confirmLabel}
+          reversible={Boolean(pendingDelete.reversible)}
           isBusy={isDeleting}
           onConfirm={confirmPendingDelete}
           onClose={() => setPendingDelete(null)}
@@ -862,8 +896,10 @@ export default function App() {
               <SalesRecords
                 orders={orders}
                 workers={workers}
+                archivedOrders={archivedOrders}
                 onUpdateOrderPayment={updateOrderPayment}
-                onDeleteOrder={deleteOrder}
+                onArchiveOrder={archiveOrder}
+                onRestoreOrder={restoreOrder}
               />
             )}
 

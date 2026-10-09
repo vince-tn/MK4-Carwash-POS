@@ -1996,3 +1996,28 @@ td {
     border-right: 0;
   }
 }
+
+/* --- Active / Archived views in Sales Records (2026-10-09) --- */
+
+.records-views {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 14px;
+}
+
+.records-views-note {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #6b7280;
+  flex: 1 1 260px;
+}
+
+/* Archiving can be undone, so it is not dressed as a destruction. */
+.confirm-reversible {
+  margin: 0 0 18px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #1d4ed8;
+}

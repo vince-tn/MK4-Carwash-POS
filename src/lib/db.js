@@ -17,7 +17,7 @@ const ORDER_SELECT = `
   service_total, addon_total, cash, gcash, credit, bank, discount, payment_enabled,
   total, total_paid, balance, commission, commission_label,
   gcash_ref, credit_ref, bank_ref, reference_no, payment_notes, payment_updated_at,
-  photo_name, photo_path, notes, created_at,
+  photo_name, photo_path, notes, created_at, archived_at, archived_by,
   order_services (
     id, category, size, price, commission_type, commission_rate, commission
   ),
@@ -100,19 +100,37 @@ function toAppOrder(row) {
     photoPath: row.photo_path || "",
     notes: row.notes || "",
     createdAt: row.created_at,
+    archivedAt: row.archived_at || null,
+    archivedBy: row.archived_by || "",
   };
 }
 
+export async function fetchArchivedOrders() {
+  return fetchOrderList({ archived: true });
+}
+
 export async function fetchOrders() {
+  return fetchOrderList({ archived: false });
+}
+
+async function fetchOrderList({ archived }) {
   // PostgREST caps a response at 1000 rows and does so silently, so a single
   // select would quietly start dropping orders about three weeks into
   // trading and every report would be wrong without saying so. Every page is
   // read, several at a time (lib/paging).
   const rows = await fetchAllPages(async (from, to, withCount) => {
     // id breaks ties, so the order of rows across pages is fixed.
-    const { data, error, count } = await supabase
+    let query = supabase
       .from("orders")
-      .select(ORDER_SELECT, withCount ? { count: "exact" } : undefined)
+      .select(ORDER_SELECT, withCount ? { count: "exact" } : undefined);
+
+    // Archived sales are kept out of every list, total and report. They are
+    // only ever read on purpose, by the Archived view.
+    query = archived
+      ? query.not("archived_at", "is", null)
+      : query.is("archived_at", null);
+
+    const { data, error, count } = await query
       .order("created_at", { ascending: false })
       .order("id", { ascending: false })
       .range(from, to);
@@ -296,25 +314,42 @@ export async function updateOrderPayment(dbId, patch) {
   return toAppOrder(data);
 }
 
-export async function deleteOrder(dbId) {
-  // Child service and add-on rows go with it via ON DELETE CASCADE.
-  //
-  // Checked the same way as deleteWorker: a delete with no matching policy
-  // is reported as success affecting nothing, which would quietly drop the
-  // row from the screen and bring it back on the next load.
+/*
+ * Takes a sale out of the records without losing it.
+ *
+ * The row, its services, its add-ons and its payment proof all stay. Only
+ * archived_at is set, which every list and total filters on. restoreOrder
+ * clears it again. There is deliberately no delete: 20 removed the policy
+ * that allowed one.
+ */
+export async function archiveOrder(dbId, archivedBy) {
+  return setArchived(dbId, new Date().toISOString(), archivedBy || null);
+}
+
+export async function restoreOrder(dbId) {
+  return setArchived(dbId, null, null);
+}
+
+async function setArchived(dbId, archivedAt, archivedBy) {
+  // Checked the same way as deleteWorker: an update no policy allows is
+  // reported as success affecting nothing, which would drop the row from the
+  // screen and bring it back on the next load.
   const { data, error } = await supabase
     .from("orders")
-    .delete()
+    .update({ archived_at: archivedAt, archived_by: archivedBy })
     .eq("id", dbId)
-    .select("id");
+    .select(ORDER_SELECT)
+    .single();
 
   if (error) throw error;
 
-  if (!data || !data.length) {
+  if (!data) {
     throw new Error(
-      "The database refused that delete. A delete policy on the orders table is missing."
+      "The database refused that change. Check that supabase/20_archive_sales.sql has been run."
     );
   }
+
+  return toAppOrder(data);
 }
 
 /*
