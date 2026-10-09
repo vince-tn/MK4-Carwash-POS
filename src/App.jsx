@@ -432,6 +432,7 @@ export default function App() {
     try {
       const saved = await db.updateOrderPayment(existing.dbId, {
         ...paymentUpdate,
+        paymentUpdatedBy: access?.name || null,
         total,
         totalPaid,
         balance: total - totalPaid,
@@ -544,7 +545,7 @@ export default function App() {
     if (!order) return;
 
     try {
-      const restored = await db.restoreOrder(order.dbId);
+      const restored = await db.restoreOrder(order.dbId, access?.name || null);
 
       setArchivedOrders((prev) =>
         prev.filter((item) => item.id !== orderId)

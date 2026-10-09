@@ -698,8 +698,8 @@ export default function SalesRecords({
               )}
               {order.paymentUpdatedAt && (
                 <small>
-                  Updated:{" "}
-                  {new Date(order.paymentUpdatedAt).toLocaleString()}
+                  Updated: {new Date(order.paymentUpdatedAt).toLocaleString()}
+                  {order.paymentUpdatedBy ? ` by ${order.paymentUpdatedBy}` : ""}
                 </small>
               )}
             </td>
@@ -839,6 +839,48 @@ export default function SalesRecords({
                     </div>
 
                     <div>
+                      <h4>History</h4>
+                      <dl>
+                        <dt>Recorded</dt>
+                        <dd>
+                          {order.createdAt
+                            ? new Date(order.createdAt).toLocaleString()
+                            : "—"}
+                        </dd>
+
+                        {order.archivedAt && (
+                          <>
+                            <dt>Archived</dt>
+                            <dd>
+                              {new Date(order.archivedAt).toLocaleString()}
+                              {order.archivedBy ? ` by ${order.archivedBy}` : ""}
+                            </dd>
+                          </>
+                        )}
+
+                        {order.restoredAt && (
+                          <>
+                            <dt>Put back</dt>
+                            <dd>
+                              {new Date(order.restoredAt).toLocaleString()}
+                              {order.restoredBy ? ` by ${order.restoredBy}` : ""}
+                            </dd>
+                          </>
+                        )}
+
+                        {order.paymentUpdatedAt && (
+                          <>
+                            <dt>Payment edited</dt>
+                            <dd>
+                              {new Date(order.paymentUpdatedAt).toLocaleString()}
+                              {order.paymentUpdatedBy
+                                ? ` by ${order.paymentUpdatedBy}`
+                                : ""}
+                            </dd>
+                          </>
+                        )}
+                      </dl>
+
                       <h4>Proof and Notes</h4>
                       <dl>
                         <dt>Photo Proof</dt>

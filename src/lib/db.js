@@ -18,6 +18,7 @@ const ORDER_SELECT = `
   total, total_paid, balance, commission, commission_label,
   gcash_ref, credit_ref, bank_ref, reference_no, payment_notes, payment_updated_at,
   photo_name, photo_path, notes, created_at, archived_at, archived_by,
+  restored_at, restored_by, payment_updated_by,
   order_services (
     id, category, size, price, commission_type, commission_rate, commission
   ),
@@ -102,6 +103,9 @@ function toAppOrder(row) {
     createdAt: row.created_at,
     archivedAt: row.archived_at || null,
     archivedBy: row.archived_by || "",
+    restoredAt: row.restored_at || null,
+    restoredBy: row.restored_by || "",
+    paymentUpdatedBy: row.payment_updated_by || "",
   };
 }
 
@@ -302,6 +306,7 @@ export async function updateOrderPayment(dbId, patch) {
       bank_ref: patch.bankRef || null,
       payment_notes: patch.paymentNotes || null,
       payment_updated_at: new Date().toISOString(),
+      payment_updated_by: patch.paymentUpdatedBy || null,
       total: num(patch.total),
       total_paid: num(patch.totalPaid),
       balance: num(patch.balance),
@@ -323,20 +328,32 @@ export async function updateOrderPayment(dbId, patch) {
  * that allowed one.
  */
 export async function archiveOrder(dbId, archivedBy) {
-  return setArchived(dbId, new Date().toISOString(), archivedBy || null);
+  // Clears any earlier restore, so a sale shows its current state rather than
+  // both at once.
+  return setArchived(dbId, {
+    archived_at: new Date().toISOString(),
+    archived_by: archivedBy || null,
+    restored_at: null,
+    restored_by: null,
+  });
 }
 
-export async function restoreOrder(dbId) {
-  return setArchived(dbId, null, null);
+export async function restoreOrder(dbId, restoredBy) {
+  return setArchived(dbId, {
+    archived_at: null,
+    archived_by: null,
+    restored_at: new Date().toISOString(),
+    restored_by: restoredBy || null,
+  });
 }
 
-async function setArchived(dbId, archivedAt, archivedBy) {
+async function setArchived(dbId, changes) {
   // Checked the same way as deleteWorker: an update no policy allows is
   // reported as success affecting nothing, which would drop the row from the
   // screen and bring it back on the next load.
   const { data, error } = await supabase
     .from("orders")
-    .update({ archived_at: archivedAt, archived_by: archivedBy })
+    .update(changes)
     .eq("id", dbId)
     .select(ORDER_SELECT)
     .single();
