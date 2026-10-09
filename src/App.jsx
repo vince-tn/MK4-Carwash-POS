@@ -488,31 +488,30 @@ export default function App() {
     const worker = workers.find((item) => item.id === workerId);
     if (!worker) return;
 
-    // The foreign key cascades, so the worker's sales go too. Put the count
-    // and the value on screen rather than asking them to take it on trust.
+    // The sales are kept (21): the foreign key only clears worker_id, and
+    // worker_name is plain text, so they stay in the records under the name of
+    // whoever did the car. Say so plainly, with the figures.
     const theirOrders = orders.filter((order) => order.workerId === workerId);
     const takings = theirOrders.reduce(
       (sum, order) => sum + Number(order.total || 0),
       0
     );
-    const proofCount = theirOrders.filter((order) => order.photoPath).length;
 
     setPendingDelete({
       kind: "worker",
       id: workerId,
       title: `Delete ${worker.name}?`,
       message: theirOrders.length
-        ? `${worker.name} has sales recorded against them. Deleting this profile deletes those sales as well, and your totals for those days will change.`
+        ? `${worker.name}'s sales are kept. They stay in the records and in every total under their name; only the link to this employee profile goes. Your figures do not change.`
         : `${worker.name} has no sales recorded. Deleting the employee removes nothing else.`,
       details: theirOrders.length
         ? [
-            `${theirOrders.length} sales order(s) will be deleted`,
-            `${peso.format(takings)} of recorded sales will be removed`,
-            proofCount
-              ? `${proofCount} payment proof image(s) will be deleted`
-              : null,
-            "To keep the history instead, cancel and set them to Inactive",
-          ].filter(Boolean)
+            `${theirOrders.length} sales order(s) will be kept`,
+            `${peso.format(takings)} of recorded sales is unaffected`,
+            "Their payment proof images are kept",
+            "They stop counting towards any employee on the Employees page",
+            "To keep the link as well, cancel and set them to Inactive",
+          ]
         : [],
       confirmLabel: "Delete employee",
     });
@@ -566,18 +565,25 @@ export default function App() {
 
     try {
       if (pendingDelete.kind === "worker") {
-        proofPaths = orders
-          .filter((order) => order.workerId === pendingDelete.id)
-          .map((order) => order.photoPath);
+        // Nothing to clean up: the sales stay, so their proofs stay too.
+        proofPaths = [];
 
         await db.deleteWorker(pendingDelete.id);
         setWorkers((prev) =>
           prev.filter((worker) => worker.id !== pendingDelete.id)
         );
-        // Their sales went with them in the database; mirror that here.
-        setOrders((prev) =>
-          prev.filter((order) => order.workerId !== pendingDelete.id)
-        );
+
+        // The database cleared worker_id on their sales; mirror that here so
+        // the Employees totals stop counting them without a reload.
+        const unlink = (list) =>
+          list.map((order) =>
+            order.workerId === pendingDelete.id
+              ? { ...order, workerId: "" }
+              : order
+          );
+
+        setOrders(unlink);
+        setArchivedOrders(unlink);
       } else {
         const order = orders.find((item) => item.id === pendingDelete.id);
 
