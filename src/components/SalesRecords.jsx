@@ -906,12 +906,6 @@ export default function SalesRecords({
                         <dd>{order.notes || "—"}</dd>
                         <dt>Payment Notes</dt>
                         <dd>{order.paymentNotes || "—"}</dd>
-                        <dt>Created</dt>
-                        <dd>
-                          {order.createdAt
-                            ? new Date(order.createdAt).toLocaleString()
-                            : "—"}
-                        </dd>
                       </dl>
                     </div>
                   </div>
