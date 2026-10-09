@@ -1451,6 +1451,13 @@ td {
   gap: 18px;
 }
 
+/* Without this a long service name stretches its panel past its share of
+   the row and squeezes the others, which is what turned the payment amounts
+   into one character per line. */
+.record-detail-grid > div {
+  min-width: 0;
+}
+
 .record-detail h4 {
   margin: 0 0 8px;
   font-size: 0.78rem;
@@ -1461,7 +1468,10 @@ td {
 
 .record-detail dl {
   display: grid;
-  grid-template-columns: auto 1fr;
+  /* The label column has a real floor. With a 0 minimum a long value --
+     "(Service percentage + add-ons)" beside a commission -- takes the whole
+     row and the label is left reading downwards, one letter per line. */
+  grid-template-columns: minmax(96px, 1fr) auto;
   gap: 4px 12px;
   margin: 0;
   font-size: 0.83rem;
@@ -1469,13 +1479,17 @@ td {
 
 .record-detail dt {
   color: #6b7280;
-  white-space: nowrap;
+  /* break-word, not anywhere: anywhere lets the column shrink to a single
+     character, which is how the labels ended up reading downwards. */
+  overflow-wrap: break-word;
 }
 
 .record-detail dd {
   margin: 0;
   text-align: right;
-  word-break: break-word;
+  /* Breaks at spaces only. An amount has none, so it can never be split,
+     while a long note beside one still wraps instead of taking the row. */
+  overflow-wrap: break-word;
 }
 
 .link-btn {
