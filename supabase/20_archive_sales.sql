@@ -52,6 +52,26 @@ create index if not exists orders_active_created_at_idx
 -- Dropped rather than left in place: a policy that exists is a policy some
 -- future code path can use by accident, and the whole point of this change is
 -- that a sale cannot be lost.
+--
+-- Both names are dropped. 09 created "Authenticated can delete orders"; 14
+-- replaced it with the role-aware "admins and secretaries delete sales". The
+-- first run of this file only named the 09 policy, and because "if exists"
+-- reports nothing when it matches nothing, the drop passed while deletion was
+-- still live. Dropping both keeps this correct whether the database came
+-- through 14 or is being rebuilt from scratch.
 ------------------------------------------------------------------------------
 
 drop policy if exists "Authenticated can delete orders" on public.orders;
+drop policy if exists "admins and secretaries delete sales" on public.orders;
+
+-- Fails loudly rather than quietly leaving a way to destroy a sale.
+do $$
+begin
+  if exists (
+    select 1 from pg_policies
+     where schemaname = 'public' and tablename = 'orders' and cmd = 'DELETE'
+  ) then
+    raise exception
+      'A delete policy still exists on public.orders. Archiving is not safe until it is gone.';
+  end if;
+end $$;
