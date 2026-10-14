@@ -8,8 +8,25 @@ import {
   useState,
 } from "react";
 import { supabase } from "../lib/supabaseClient";
-import { summarise } from "../lib/totals";
+import { laterPaid, laterPayments, summarise } from "../lib/totals";
 import { isSalesWorker } from "../lib/access";
+import LaterPayments from "./LaterPayments";
+
+const METHOD_LABEL = { cash: "Cash", gcash: "GCash", credit: "Credit", bank: "Bank" };
+
+// A later payment in a few words: method, amount and reference.
+function laterPaymentShort(payment) {
+  return `${METHOD_LABEL[payment.method] || payment.method} ${peso.format(
+    payment.amount
+  )}${payment.reference ? ` (ref ${payment.reference})` : ""}`;
+}
+
+// The same with its date, for the table and the CSV.
+function laterPaymentLabel(payment) {
+  return `${laterPaymentShort(payment)} on ${new Date(
+    payment.paidAt
+  ).toLocaleDateString()}`;
+}
 
 const peso = new Intl.NumberFormat("en-PH", {
   style: "currency",
@@ -118,6 +135,10 @@ function getPaymentMethods(order) {
   if (order.paymentEnabled?.bank) methods.push("bank");
   if (order.paymentEnabled?.discount) methods.push("discount");
 
+  laterPayments(order).forEach((payment) => {
+    if (!methods.includes(payment.method)) methods.push(payment.method);
+  });
+
   return methods;
 }
 
@@ -157,7 +178,7 @@ function sortOrders(orders, sortBy) {
   return sorted;
 }
 
-function PaymentEditModal({ order, onClose, onSave }) {
+function PaymentEditModal({ order, onClose, onSave, onAddPayment, onRemovePayment }) {
   const [paymentForm, setPaymentForm] = useState({
     paymentEnabled: {
       cash: Boolean(order.paymentEnabled?.cash),
@@ -190,7 +211,9 @@ function PaymentEditModal({ order, onClose, onSave }) {
     (paymentForm.paymentEnabled.cash ? Number(paymentForm.cash) || 0 : 0) +
     (paymentForm.paymentEnabled.gcash ? Number(paymentForm.gcash) || 0 : 0) +
     (paymentForm.paymentEnabled.credit ? Number(paymentForm.credit) || 0 : 0) +
-    (paymentForm.paymentEnabled.bank ? Number(paymentForm.bank) || 0 : 0);
+    (paymentForm.paymentEnabled.bank ? Number(paymentForm.bank) || 0 : 0) +
+    // Payments made after the sale count too (supabase/23).
+    laterPaid(order);
 
   const updatedBalance = updatedTotal - updatedPaid;
 
@@ -275,6 +298,14 @@ function PaymentEditModal({ order, onClose, onSave }) {
             </strong>
           </div>
         </div>
+
+        <LaterPayments
+          order={order}
+          onAdd={onAddPayment}
+          onRemove={onRemovePayment}
+        />
+
+        <h3 className="payment-modal-subhead">Payment taken at the sale</h3>
 
         <div className="payment-grid modal-payment-grid">
           <label className="check-label">
@@ -434,6 +465,8 @@ export default function SalesRecords({
   archivedOrders = [],
   workers,
   onUpdateOrderPayment,
+  onAddPayment,
+  onRemovePayment,
   onArchiveOrder,
   onRestoreOrder,
 }) {
@@ -443,6 +476,14 @@ export default function SalesRecords({
   const [showArchived, setShowArchived] = useState(false);
 
   const sourceOrders = showArchived ? archivedOrders : orders;
+
+  // The sale in the Update Payment window, as it is now: adding or removing a
+  // later payment replaces it in the list, and the window follows.
+  const editingOrder = editingPaymentOrder
+    ? [...orders, ...archivedOrders].find(
+        (order) => order.dbId === editingPaymentOrder.dbId
+      ) || editingPaymentOrder
+    : null;
   const [expandedOrder, setExpandedOrder] = useState(null);
 
   const [filters, setFilters] = useState({
@@ -517,6 +558,12 @@ export default function SalesRecords({
           order.gcashRef?.toLowerCase(),
           order.creditRef?.toLowerCase(),
           order.bankRef?.toLowerCase(),
+          // Every later payment's reference, removed ones too, so a sale can
+          // be found by any reference it was ever given.
+          (order.payments || [])
+            .map((payment) => payment.reference)
+            .join(" ")
+            .toLowerCase(),
           order.services
             ?.map((service) => `${service.category} ${service.size}`)
             .join(" ")
@@ -696,6 +743,14 @@ export default function SalesRecords({
                   <br />
                 </>
               )}
+              {laterPayments(order).map((payment) => (
+                <Fragment key={payment.id}>
+                  <span className="later-payment-line">
+                    + {laterPaymentLabel(payment)}
+                  </span>
+                  <br />
+                </Fragment>
+              ))}
               {order.paymentUpdatedAt && (
                 <small>
                   Updated: {new Date(order.paymentUpdatedAt).toLocaleString()}
@@ -879,6 +934,28 @@ export default function SalesRecords({
                             </dd>
                           </>
                         )}
+
+                        {(order.payments || []).map((payment) => (
+                          <Fragment key={payment.id}>
+                            <dt>Paid later</dt>
+                            <dd>
+                              {laterPaymentShort(payment)},{" "}
+                              {new Date(payment.paidAt).toLocaleString()}
+                              {payment.recordedBy ? ` by ${payment.recordedBy}` : ""}
+                            </dd>
+                            {payment.removedAt && (
+                              <>
+                                <dt>Removed</dt>
+                                <dd>
+                                  {new Date(payment.removedAt).toLocaleString()}
+                                  {payment.removedBy
+                                    ? ` by ${payment.removedBy}`
+                                    : ""}
+                                </dd>
+                              </>
+                            )}
+                          </Fragment>
+                        ))}
                       </dl>
 
                       <h4>Proof and Notes</h4>
@@ -952,6 +1029,8 @@ export default function SalesRecords({
       "GCash Reference",
       "Credit Reference",
       "Bank Reference",
+      "Paid Later",
+      "Later Payments",
       "Payment Notes",
       "Payment Updated At",
       "Photo Proof",
@@ -993,6 +1072,8 @@ export default function SalesRecords({
         order.gcashRef || order.referenceNo,
         order.creditRef,
         order.bankRef,
+        laterPaid(order),
+        laterPayments(order).map(laterPaymentLabel).join(" | "),
         order.paymentNotes,
         order.paymentUpdatedAt,
         order.photoName,
@@ -1242,11 +1323,13 @@ export default function SalesRecords({
         </div>
       )}
 
-      {editingPaymentOrder && (
+      {editingOrder && (
         <PaymentEditModal
-          order={editingPaymentOrder}
+          order={editingOrder}
           onClose={() => setEditingPaymentOrder(null)}
           onSave={onUpdateOrderPayment}
+          onAddPayment={onAddPayment}
+          onRemovePayment={onRemovePayment}
         />
       )}
     </section>

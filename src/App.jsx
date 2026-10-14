@@ -20,6 +20,7 @@ import ConfirmModal from "./components/ConfirmModal";
 import { buildDefaultPricing } from "./data/pricing";
 import * as db from "./lib/db";
 import { accessFor, isSalesWorker, ROLE_LABELS } from "./lib/access";
+import { laterPaid } from "./lib/totals";
 
 // Each page is a separate download, fetched the first time it is needed and
 // prefetched once the login's role is known. A worker's phone never
@@ -427,7 +428,10 @@ export default function App() {
       (paymentUpdate.paymentEnabled?.credit
         ? Number(paymentUpdate.credit) || 0
         : 0) +
-      (paymentUpdate.paymentEnabled?.bank ? Number(paymentUpdate.bank) || 0 : 0);
+      (paymentUpdate.paymentEnabled?.bank ? Number(paymentUpdate.bank) || 0 : 0) +
+      // Payments made after the sale still count. The database works Paid
+      // and Balance out the same way (supabase/23) and has the last word.
+      laterPaid(existing);
 
     try {
       const saved = await db.updateOrderPayment(existing.dbId, {
@@ -538,6 +542,31 @@ export default function App() {
       confirmLabel: "Archive sale",
       reversible: true,
     });
+  }
+
+  // Puts a sale read back from the database in place of the copy on screen.
+  function replaceOrder(saved) {
+    const swap = (list) =>
+      list.map((order) => (order.dbId === saved.dbId ? saved : order));
+
+    setOrders(swap);
+    setArchivedOrders(swap);
+  }
+
+  // A payment made after the sale. Errors go back to the Update Payment
+  // window, which says what went wrong and keeps what was typed.
+  async function addOrderPayment(orderId, payment) {
+    const order = [...orders, ...archivedOrders].find((item) => item.id === orderId);
+    if (!order) throw new Error("That sale is no longer on screen. Reload and try again.");
+
+    replaceOrder(await db.addOrderPayment(order.dbId, payment));
+  }
+
+  async function removeOrderPayment(orderId, paymentId) {
+    const order = [...orders, ...archivedOrders].find((item) => item.id === orderId);
+    if (!order) throw new Error("That sale is no longer on screen. Reload and try again.");
+
+    replaceOrder(await db.removeOrderPayment(order.dbId, paymentId));
   }
 
   async function restoreOrder(orderId) {
@@ -905,6 +934,8 @@ export default function App() {
                 workers={workers}
                 archivedOrders={archivedOrders}
                 onUpdateOrderPayment={updateOrderPayment}
+                onAddPayment={addOrderPayment}
+                onRemovePayment={removeOrderPayment}
                 onArchiveOrder={archiveOrder}
                 onRestoreOrder={restoreOrder}
               />

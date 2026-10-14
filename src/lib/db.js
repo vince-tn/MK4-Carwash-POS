@@ -22,7 +22,11 @@ const ORDER_SELECT = `
   order_services (
     id, category, size, price, commission_type, commission_rate, commission
   ),
-  order_addons ( id, name, price, commission_rate, commission, details )
+  order_addons ( id, name, price, commission_rate, commission, details ),
+  order_payments (
+    id, method, amount, reference, proof_path, proof_name, note, paid_at,
+    recorded_by, removed_at, removed_by
+  )
 `;
 
 const EMPTY_PAYMENT_ENABLED = {
@@ -106,7 +110,78 @@ function toAppOrder(row) {
     restoredAt: row.restored_at || null,
     restoredBy: row.restored_by || "",
     paymentUpdatedBy: row.payment_updated_by || "",
+    // Payments made after the sale (supabase/23), oldest first. Removed ones
+    // are kept for the history and left out of every total (lib/totals).
+    payments: (row.order_payments || []).map(toAppPayment).sort((a, b) =>
+      String(a.paidAt).localeCompare(String(b.paidAt))
+    ),
   };
+}
+
+function toAppPayment(row) {
+  return {
+    id: row.id,
+    method: row.method,
+    amount: Number(row.amount) || 0,
+    reference: row.reference || "",
+    proofPath: row.proof_path || "",
+    proofName: row.proof_name || "",
+    note: row.note || "",
+    paidAt: row.paid_at,
+    recordedBy: row.recorded_by || "",
+    removedAt: row.removed_at || null,
+    removedBy: row.removed_by || "",
+  };
+}
+
+async function fetchOrderById(dbId) {
+  const { data, error } = await supabase
+    .from("orders")
+    .select(ORDER_SELECT)
+    .eq("id", dbId)
+    .single();
+
+  if (error) throw error;
+  return toAppOrder(data);
+}
+
+/*
+ * A payment made after the sale (supabase/23). The database checks it is not
+ * more than what is still owed, stamps the time and who recorded it, and
+ * brings the sale's Paid and Balance up to date; the sale is read back so
+ * the screen shows exactly what was stored.
+ */
+export async function addOrderPayment(orderDbId, payment) {
+  const { error } = await supabase.from("order_payments").insert({
+    order_id: orderDbId,
+    method: payment.method,
+    amount: num(payment.amount),
+    reference: payment.reference?.trim() || null,
+    proof_path: payment.proofPath || null,
+    proof_name: payment.proofName || null,
+    note: payment.note?.trim() || null,
+  });
+
+  if (error) throw error;
+  return fetchOrderById(orderDbId);
+}
+
+// Marks a later payment removed. It stays in the history; it stops counting.
+export async function removeOrderPayment(orderDbId, paymentId) {
+  const { data, error } = await supabase
+    .from("order_payments")
+    .update({ removed_at: new Date().toISOString() })
+    .eq("id", paymentId)
+    .is("removed_at", null)
+    .select("id");
+
+  if (error) throw error;
+
+  if (!data || !data.length) {
+    throw new Error("That payment was already removed, or could not be changed.");
+  }
+
+  return fetchOrderById(orderDbId);
 }
 
 export async function fetchArchivedOrders() {
@@ -207,7 +282,7 @@ function toServiceRows(order) {
 
 /*
  * The Worker Form hands over addOnLines: each add-on with the price charged
- * (the worker's own amount for Labor Only), its commission and any labor
+ * (the worker's own amount for Labor), its commission and any labor
  * description. Orders from the localStorage import have only names, so their
  * prices come from the caller's price list as before.
  */

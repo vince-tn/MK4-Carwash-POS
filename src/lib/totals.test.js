@@ -110,3 +110,59 @@ test("no sales totals zero rather than throwing", () => {
   assert.equal(totals.cars, 0);
   assert.equal(totals.balance, 0);
 });
+
+test("payments made after the sale count by their own method", () => {
+  // 1,000 billed: 300 cash at the sale, then 500 GCash and 200 bank later.
+  const paidOff = sale({
+    paymentEnabled: { cash: true },
+    cash: 300,
+    payments: [
+      { method: "gcash", amount: 500, paidAt: "2026-10-15T02:00:00Z" },
+      { method: "bank", amount: 200, paidAt: "2026-10-16T02:00:00Z" },
+    ],
+  });
+
+  assert.equal(amountFor(paidOff, "cash"), 300);
+  assert.equal(amountFor(paidOff, "gcash"), 500);
+  assert.equal(amountFor(paidOff, "bank"), 200);
+  assert.equal(moneyTaken(paidOff), 1000);
+
+  const totals = summarise([paidOff]);
+  assert.equal(totals.sales, 1000);
+  assert.equal(totals.gcash, 500);
+});
+
+test("a removed later payment stops counting", () => {
+  const corrected = sale({
+    paymentEnabled: { cash: true },
+    cash: 300,
+    payments: [
+      { method: "cash", amount: 200, removedAt: "2026-10-15T03:00:00Z" },
+      { method: "cash", amount: 150 },
+    ],
+  });
+
+  assert.equal(amountFor(corrected, "cash"), 450);
+  assert.equal(moneyTaken(corrected), 450);
+});
+
+test("a later payment never counts as a discount, and no box need be ticked", () => {
+  const laterOnly = sale({
+    payments: [{ method: "gcash", amount: 250 }],
+  });
+
+  assert.equal(amountFor(laterOnly, "discount"), 0);
+  assert.equal(amountFor(laterOnly, "gcash"), 250);
+  assert.equal(summarise([laterOnly]).sales, 250);
+});
+
+test("sales from before later payments existed total exactly as before", () => {
+  const before = sale({
+    paymentEnabled: { cash: true, gcash: true },
+    cash: 8410,
+    gcash: 3480,
+  });
+
+  assert.equal(moneyTaken(before), 11890);
+  assert.equal(moneyTaken({ ...before, payments: [] }), 11890);
+});

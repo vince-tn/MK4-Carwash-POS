@@ -129,14 +129,14 @@ export default function WorkerForm({
     );
   }, [form.services]);
 
-  // The chosen worker-priced add-on (Labor Only), if any. While it is chosen
-  // it is the only add-on: the others are cleared and locked.
+  // The chosen worker-priced add-on (Labor), if any. It can sit alongside
+  // any other add-on (client request, 2026-10-14).
   const laborAddOn = form.selectedAddOns
     .map((name) => addOns.find((item) => item.name === name))
     .find((addOn) => addOn?.workerSetsPrice);
 
-  // Each chosen add-on as it will be charged: Labor Only at the worker's
-  // amount, everything else at the price list's.
+  // Each chosen add-on as it will be charged: Labor at the worker's amount,
+  // everything else at the price list's.
   const addOnLines = useMemo(() => {
     return form.selectedAddOns.map((name) => {
       const addOn = addOns.find((item) => item.name === name);
@@ -289,12 +289,12 @@ export default function WorkerForm({
         };
       }
 
-      // Labor Only stands alone: choosing it clears the other add-ons, and
-      // its amount starts at the admin's default for the worker to change.
+      // Labor joins whatever else is chosen. Its amount starts at the
+      // admin's default for the worker to change.
       if (addOn?.workerSetsPrice) {
         return {
           ...prev,
-          selectedAddOns: [name],
+          selectedAddOns: [...prev.selectedAddOns, name],
           laborAmount: String(Number(addOn.price) || 0),
         };
       }
@@ -652,12 +652,6 @@ export default function WorkerForm({
                     key={addOn.name}
                     className={isSelected ? "addon active" : "addon"}
                     onClick={() => toggleAddOn(addOn.name)}
-                    disabled={Boolean(laborAddOn) && !isSelected}
-                    title={
-                      laborAddOn && !isSelected
-                        ? `Unavailable while ${laborAddOn.name} is selected`
-                        : undefined
-                    }
                   >
                     {addOn.name}
                     <span>{peso.format(shownPrice)}</span>

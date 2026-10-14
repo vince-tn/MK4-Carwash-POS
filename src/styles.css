@@ -2035,3 +2035,102 @@ td {
   font-weight: 700;
   color: #1d4ed8;
 }
+
+/* --- Payments after the sale (Update Payment window, LaterPayments.jsx) --- */
+
+.later-payments {
+  margin: 18px 0 8px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #fafafa;
+}
+
+.later-payments-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.later-payments-head h3,
+.payment-modal-subhead {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--black);
+}
+
+.later-payments-head span {
+  font-weight: 900;
+}
+
+.payment-modal-subhead {
+  margin: 18px 0 10px;
+}
+
+.later-payment-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.later-payment-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  align-items: center;
+  padding: 10px 12px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.later-payment-main {
+  color: var(--black);
+  overflow-wrap: anywhere;
+}
+
+.later-payment-meta {
+  grid-column: 1;
+  font-size: 0.78rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.later-payment-actions {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.later-payment-list li.is-removed .later-payment-main {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+/* The form sits inside a padded card already. */
+.later-payment-form.form-grid {
+  padding: 0;
+}
+
+.later-payment-line {
+  color: var(--success);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 700px) {
+  .later-payment-list li {
+    grid-template-columns: 1fr;
+  }
+
+  .later-payment-actions {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}

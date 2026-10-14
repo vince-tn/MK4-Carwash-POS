@@ -15,8 +15,23 @@
 // with the box ticked is meaningfully different from the box left alone.
 export const PAYMENT_METHODS = ["cash", "gcash", "credit", "bank"];
 
+// Payments made after the sale (supabase/23), minus any that were removed.
+export function laterPayments(order) {
+  return (order?.payments || []).filter((payment) => !payment.removedAt);
+}
+
+// What the later payments add to one method, or to all of them.
+export function laterPaid(order, method) {
+  return laterPayments(order)
+    .filter((payment) => !method || payment.method === method)
+    .reduce((total, payment) => total + (Number(payment.amount) || 0), 0);
+}
+
+// A method's amount at the sale, plus what came in later by the same method.
+// The discount is never a later payment.
 export function amountFor(order, method) {
-  return order?.paymentEnabled?.[method] ? Number(order[method]) || 0 : 0;
+  const atSale = order?.paymentEnabled?.[method] ? Number(order[method]) || 0 : 0;
+  return method === "discount" ? atSale : atSale + laterPaid(order, method);
 }
 
 export function moneyTaken(order) {
