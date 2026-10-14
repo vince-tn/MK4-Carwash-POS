@@ -60,7 +60,10 @@ export function summarise(orders = []) {
     }
 
     totals.discount += amountFor(order, "discount");
-    totals.balance += Number(order.balance) || 0;
+    // Unpaid is what customers still owe. A sale paid more than its total has
+    // a negative balance; it owes nothing, and must not cancel out what other
+    // sales owe (it did: 36,780 showed where 38,600 was owed, 2026-10-14).
+    totals.balance += Math.max(Number(order.balance) || 0, 0);
     totals.commission += Number(order.commission) || 0;
   }
 

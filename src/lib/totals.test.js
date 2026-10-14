@@ -166,3 +166,15 @@ test("sales from before later payments existed total exactly as before", () => {
   assert.equal(moneyTaken(before), 11890);
   assert.equal(moneyTaken({ ...before, payments: [] }), 11890);
 });
+
+test("an overpaid sale owes nothing and does not cancel what others owe", () => {
+  // The live figures that showed the fault on 2026-10-14: 50, 13,550 and
+  // 25,000 owed; six sales paid 1,820 more than their totals between them.
+  const owing = [50, 13550, 25000].map((balance) => sale({ balance }));
+  const overpaid = [-1000, -500, -120, -100, -50, -50].map((balance) =>
+    sale({ balance })
+  );
+
+  const totals = summarise([...owing, ...overpaid]);
+  assert.equal(totals.balance, 38600, "unpaid is what is owed");
+});
