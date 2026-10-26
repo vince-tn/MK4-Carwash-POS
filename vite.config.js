@@ -1,8 +1,16 @@
+import process from 'node:process'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+// Vercel builds `main` as Production, with the live database's address and
+// key from its settings. Every other branch (`staging`, pull requests) is a
+// Preview, and Previews take the staging database from .env.staging. So only
+// `main` can ever reach the shop's real data.
+const staging = process.env.VERCEL_ENV === 'preview'
+
 // https://vite.dev/config/
 export default defineConfig({
+  ...(staging && { mode: 'staging' }),
   plugins: [react()],
   build: {
     rolldownOptions: {

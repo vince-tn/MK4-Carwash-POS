@@ -1,13 +1,15 @@
 name: Supabase Keep-Alive
 
 # Supabase pauses free-tier projects after 7 days of inactivity.
-# This pings the project daily so it never reaches that threshold.
+# This pings each project daily so it never reaches that threshold: the live
+# one and the staging one, which can easily go a quiet week.
 # GitHub's scheduler is best-effort and can be delayed by a while, so daily
 # (rather than weekly) leaves plenty of margin.
 #
 # Requires:
-#   - supabase/keep_alive.sql applied once to the project
-#   - repo secrets SUPABASE_URL and SUPABASE_ANON_KEY
+#   - supabase/keep_alive.sql applied once to each project
+#   - live: repo secrets SUPABASE_URL and SUPABASE_ANON_KEY
+#   - staging: nothing; its address and public key are in .env.staging
 
 on:
   schedule:
@@ -19,17 +21,35 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    strategy:
+      # One project failing must not stop the other being pinged.
+      fail-fast: false
+      matrix:
+        project: [live, staging]
     env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      PROJECT: ${{ matrix.project }}
+      LIVE_URL: ${{ secrets.SUPABASE_URL }}
+      LIVE_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
     steps:
-      - name: Check secrets are configured
+      - if: matrix.project == 'staging'
+        uses: actions/checkout@v4
+
+      - name: Pick the project
         run: |
           set -euo pipefail
-          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_ANON_KEY:-}" ]; then
-            echo "::error::Repo secrets SUPABASE_URL and SUPABASE_ANON_KEY must both be set."
+          if [ "${PROJECT}" = "staging" ]; then
+            url=$(sed -n 's/^VITE_SUPABASE_URL=//p' .env.staging | tr -d '\r')
+            key=$(sed -n 's/^VITE_SUPABASE_ANON_KEY=//p' .env.staging | tr -d '\r')
+          else
+            url="${LIVE_URL:-}"
+            key="${LIVE_KEY:-}"
+          fi
+          if [ -z "${url}" ] || [ -z "${key}" ]; then
+            echo "::error::No address or key for ${PROJECT}. Live needs the repo secrets SUPABASE_URL and SUPABASE_ANON_KEY; staging reads .env.staging."
             exit 1
           fi
+          echo "SUPABASE_URL=${url}" >> "${GITHUB_ENV}"
+          echo "SUPABASE_ANON_KEY=${key}" >> "${GITHUB_ENV}"
 
       - name: Read from the database
         run: |

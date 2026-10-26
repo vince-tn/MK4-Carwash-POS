@@ -218,13 +218,18 @@ export async function handle(body: unknown, deps: Deps) {
 // Only runs on Supabase (Deno). The tests import handle() above without it.
 if (typeof Deno !== "undefined") {
   // The addresses the app is opened at. The vercel.app one still works, so
-  // old bookmarks keep their Logins page.
+  // old bookmarks keep their Logins page. mk4-staging is the staging site.
   const ALLOWED_ORIGINS = [
     "https://mk4.kimberlyglazing.ph",
     "https://mk-4-carwash-pos.vercel.app",
+    "https://mk4-staging.vercel.app",
     "http://localhost:5173",
     "http://localhost:4173",
   ];
+
+  // Vercel also gives every preview build an address of its own.
+  const PREVIEW_ORIGIN = /^https:\/\/mk-4-carwash-pos-[a-z0-9-]+-paulalcantaras-projects\.vercel\.app$/;
+  const allowed = (origin: string) => ALLOWED_ORIGINS.includes(origin) || PREVIEW_ORIGIN.test(origin);
 
   // The new-style keys arrive as a JSON object; the legacy ones as strings.
   const firstKey = (name: string): string | null => {
@@ -245,7 +250,7 @@ if (typeof Deno !== "undefined") {
       status,
       headers: {
         "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0],
+        "Access-Control-Allow-Origin": allowed(origin) ? origin : ALLOWED_ORIGINS[0],
         "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         Vary: "Origin",

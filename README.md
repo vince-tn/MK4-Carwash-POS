@@ -4,6 +4,7 @@ Point of sale for MK4 Auto Care: workers record each car on the Worker Form,
 the office follows sales, commissions and staff.
 
 - Live: https://mk4.kimberlyglazing.ph (also https://mk-4-carwash-pos.vercel.app)
+- Staging: https://mk4-staging.vercel.app, for trying changes first (see [Staging](#staging))
 - Frontend: React 19 + Vite 8, deployed by Vercel on every push to `main`
 - Backend: Supabase (Postgres, Auth, Storage), project `vsxwwgglvckbjxvifxuw`
 
@@ -68,7 +69,11 @@ npm run dev
 ```
 
 The dev server talks to the production database. Do not submit test sales
-from it unless you delete them afterwards.
+from it. To try things against the staging database instead:
+
+```bash
+npm run dev:staging
+```
 
 Checks, also run by GitHub Actions on every push:
 
@@ -85,6 +90,60 @@ Editor in number order. `00_live_schema_snapshot.sql` records the schema as it
 was on 2026-10-02 (before 10). Every later file says what it changes, why, and
 whether the app must be deployed before or after it. When an app change needs
 a new migration, deploy whichever side the file says first.
+
+## Staging
+
+A second copy of the app and database for trying changes before the shop
+sees them: same screens, same database rules, test data only.
+
+| | Live | Staging |
+|---|---|---|
+| Site | https://mk4.kimberlyglazing.ph | https://mk4-staging.vercel.app |
+| Branch | `main` | `staging` |
+| Supabase project | `vsxwwgglvckbjxvifxuw` | `hoezwrpnhgyltrqbomdc` (mk4-staging) |
+
+The staging site shows an orange **Staging** tab at the top of every screen
+and "[Staging]" in the browser tab. The live site never does.
+
+How a build picks its database: Vercel builds `main` as Production, with the
+live address and key from its Environment Variables (set for Production
+only). Every other branch, `staging` and pull requests, is a Preview, and
+`vite.config.js` points Previews at the staging database in `.env.staging`.
+Nothing but `main` can reach the shop's data. Both values in `.env.staging`
+are public; never put a secret key there.
+
+**Working through staging:**
+
+1. Commit to `staging` and push. The staging site updates in a minute or two.
+2. If the change has a migration, run it in the **staging** project's SQL
+   Editor first, then check it on the staging site.
+3. When it is right, run the migration on live (if there is one, in the order
+   the file says), then merge `staging` into `main` and push.
+
+**Logins on staging** are separate from live's. Create them in the staging
+project (Authentication → Users → Add user, **Auto Confirm User** ticked):
+`admin@mk4.pos`, `secretary@mk4.pos` and `worker@mk4.pos`, with test
+passwords that are not the live ones. The employees they belong to already
+exist. Sign-ups from the app should be off, as on live (Authentication →
+Sign In / Providers → Email → Allow new users to sign up).
+
+The **Logins page** on staging needs the `admin-logins` function deployed to
+the staging project too, the same way as on live (see above).
+
+**Rebuilding the staging database** from scratch, into an empty project:
+
+```bash
+node scripts/build-staging-sql.mjs staging-sql
+```
+
+then run `staging-sql/staging-1.sql`, `staging-2.sql` and `staging-3.sql`,
+in that order, in the staging SQL Editor. It is three scripts because 14
+creates a constraint that 15 drops, and Postgres will not do both in one
+transaction. It loads the default price list and two test workers. It holds
+no customer data, and none should ever be copied there.
+
+`Supabase Keep-Alive` pings staging daily too, so a quiet week does not pause
+it.
 
 ## Looking after it
 

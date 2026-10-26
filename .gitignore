@@ -28,3 +28,6 @@ dist-ssr
 
 # Claude Code local tooling
 .claude/
+
+# Output of scripts/build-staging-sql.mjs
+staging-sql
