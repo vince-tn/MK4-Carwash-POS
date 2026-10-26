@@ -1,0 +1,112 @@
+name: Staging Refresh
+
+# Once a week, early Saturday in Manila, the staging database is refilled with
+# a copy of the live data, so staging looks like the shop does now.
+#
+# Customers' details never reach staging: names, phone numbers, plates,
+# payment references and notes are replaced in the copy, and proof images are
+# not copied (scripts/staging-refresh/2-mask.sql). Money, services, dates,
+# employees and prices come across as they are, so every total on staging
+# matches live.
+#
+# It only ever READS live and WRITES staging:
+#   - live is only dumped;
+#   - each address must name its own project, and the database written to
+#     must hold the mk4_staging.marker row, which live never has;
+#   - all of staging's change happens in one transaction, so a failure leaves
+#     staging exactly as it was.
+#
+# Staging keeps its logins (Authentication) and its own structure, so a
+# migration being tried there survives the refresh. Its test sales and any
+# employee changes made there are replaced each week.
+#
+# Setup: two repo secrets (Settings -> Secrets and variables -> Actions):
+#   SUPABASE_DB_URL  live's "Session pooler" connection string, with its
+#                    database password (the backups use the same one)
+#   STAGING_DB_URL   staging's "Session pooler" connection string, with the
+#                    staging database password
+# Until both exist, each run skips with a warning instead of failing.
+
+on:
+  schedule:
+    # 16:07 UTC Friday is 00:07 Saturday in Manila. Off the hour because
+    # GitHub queues :00 jobs the longest.
+    - cron: "7 16 * * 5"
+  workflow_dispatch: # lets you run it by hand from the Actions tab
+
+concurrency:
+  group: staging-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      LIVE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      STAGING_DB_URL: ${{ secrets.STAGING_DB_URL }}
+    steps:
+      - name: Check secrets are configured
+        id: secrets
+        run: |
+          set -euo pipefail
+          if [ -z "${LIVE_DB_URL:-}" ] || [ -z "${STAGING_DB_URL:-}" ]; then
+            echo "::warning::Staging was not refreshed. Add the SUPABASE_DB_URL and STAGING_DB_URL repo secrets to turn this on."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Each address must name its own project, and never the other's.
+          case "$LIVE_DB_URL" in
+            *vsxwwgglvckbjxvifxuw*) ;;
+            *) echo "::error::SUPABASE_DB_URL is not the live project's connection string."; exit 1 ;;
+          esac
+          case "$STAGING_DB_URL" in
+            *vsxwwgglvckbjxvifxuw*) echo "::error::STAGING_DB_URL points at the live project. Nothing was changed."; exit 1 ;;
+            *hoezwrpnhgyltrqbomdc*) ;;
+            *) echo "::error::STAGING_DB_URL is not the staging project's connection string."; exit 1 ;;
+          esac
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        if: steps.secrets.outputs.configured == 'true'
+
+      - uses: supabase/setup-cli@v1
+        if: steps.secrets.outputs.configured == 'true'
+        with:
+          version: latest
+
+      - name: Copy the live data (read only)
+        if: steps.secrets.outputs.configured == 'true'
+        run: |
+          set -euo pipefail
+          supabase db dump --db-url "$LIVE_DB_URL" --data-only --use-copy --schema public -f live-data.sql
+          ls -l live-data.sql
+          # A transaction statement inside the dump would end the one the load
+          # runs in, and a failure after it could leave staging half done.
+          if grep -qiE '^[[:space:]]*(BEGIN|COMMIT|ROLLBACK|END)[[:space:]]*;' live-data.sql; then
+            echo "::error::The dump contains a transaction statement. Staging was not touched."
+            exit 1
+          fi
+
+      - name: Load it into staging, with customers' details replaced
+        if: steps.secrets.outputs.configured == 'true'
+        run: |
+          set -euo pipefail
+          # Empty exactly the tables the copy fills; a table only staging has
+          # (a migration being tried) is left alone.
+          tables=$(grep -oE '^COPY "?public"?\."?[A-Za-z_][A-Za-z0-9_]*"?' live-data.sql | sed -E 's/^COPY //' | sort -u | paste -sd, -)
+          if [ -z "$tables" ]; then
+            echo "::error::The dump holds no tables. Staging was not touched."
+            exit 1
+          fi
+          echo "Tables: $tables"
+          {
+            cat scripts/staging-refresh/1-check.sql
+            echo "truncate table ${tables} cascade;"
+            cat live-data.sql
+            cat scripts/staging-refresh/2-mask.sql
+          } > refresh.sql
+          rm live-data.sql
+          psql "$STAGING_DB_URL" --no-psqlrc --quiet --single-transaction \
+            --set ON_ERROR_STOP=1 --file refresh.sql
+          rm refresh.sql

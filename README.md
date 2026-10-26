@@ -157,6 +157,24 @@ no customer data, and none should ever be copied there.
 `Supabase Keep-Alive` pings staging daily too, so a quiet week does not pause
 it.
 
+**Weekly refresh.** Early every Saturday (00:07 Manila), `Staging Refresh`
+(GitHub Actions) refills the staging database with a copy of the live data,
+so staging looks like the shop does now. Customers' details are replaced in
+the copy (names, phone numbers, plates, payment references, notes) and proof
+images are not copied; money, services, dates, employees and prices come
+across as they are, so staging's totals match live's. It only reads live,
+writes only to a database holding the `mk4_staging.marker` row (which live
+never has), and does it all in one transaction. Staging keeps its logins and
+its own structure, so a migration being tried there survives; its test sales
+are replaced. It needs two repo secrets, `SUPABASE_DB_URL` (live's Session
+pooler connection string, the same one the backups use) and `STAGING_DB_URL`
+(staging's); until then it skips. Run it by hand from the Actions tab
+whenever staging should catch up sooner.
+
+After a refresh the staging logins open as live's employees: the admin login
+as live's admin, and the shared worker and secretary logins as live's
+Workers and Secretary.
+
 ## Looking after it
 
 Nothing needs doing day to day. Every few months:
