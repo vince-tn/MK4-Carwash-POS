@@ -75,6 +75,11 @@ jobs:
         with:
           version: latest
 
+      # psql loads the copy. Installed only if the runner image lacks it.
+      - name: Make sure psql is installed
+        if: steps.secrets.outputs.configured == 'true'
+        run: command -v psql || (sudo apt-get update -q && sudo apt-get install -yq postgresql-client)
+
       - name: Copy the live data (read only)
         if: steps.secrets.outputs.configured == 'true'
         run: |
