@@ -118,7 +118,19 @@ are public; never put a secret key there.
 2. If the change has a migration, run it in the **staging** project's SQL
    Editor first, then check it on the staging site.
 3. When it is right, run the migration on live (if there is one, in the order
-   the file says), then merge `staging` into `main` and push.
+   the file says), then merge `staging` into `main` and push:
+
+   ```bash
+   git checkout main
+   git merge --no-ff staging
+   git push
+   ```
+
+   `--no-ff` matters. Vercel never builds a commit it has already deployed,
+   and staging's commits have been, so a fast-forward merge could leave the
+   live site on the old version. The merge commit is new, so it builds. For
+   the same reason, pushing `staging` builds nothing until it has a commit of
+   its own.
 
 **Logins on staging** are separate from live's. Create them in the staging
 project (Authentication → Users → Add user, **Auto Confirm User** ticked):
@@ -144,6 +156,24 @@ no customer data, and none should ever be copied there.
 
 `Supabase Keep-Alive` pings staging daily too, so a quiet week does not pause
 it.
+
+**Weekly refresh.** Early every Saturday (00:07 Manila), `Staging Refresh`
+(GitHub Actions) refills the staging database with a copy of the live data,
+so staging looks like the shop does now. Customers' details are replaced in
+the copy (names, phone numbers, plates, payment references, notes) and proof
+images are not copied; money, services, dates, employees and prices come
+across as they are, so staging's totals match live's. It only reads live,
+writes only to a database holding the `mk4_staging.marker` row (which live
+never has), and does it all in one transaction. Staging keeps its logins and
+its own structure, so a migration being tried there survives; its test sales
+are replaced. It needs two repo secrets, `SUPABASE_DB_URL` (live's Session
+pooler connection string, the same one the backups use) and `STAGING_DB_URL`
+(staging's); until then it skips. Run it by hand from the Actions tab
+whenever staging should catch up sooner.
+
+After a refresh the staging logins open as live's employees: the admin login
+as live's admin, and the shared worker and secretary logins as live's
+Workers and Secretary.
 
 ## Looking after it
 

@@ -97,6 +97,17 @@ select 'service_percent', 0
     header(3),
     priceList,
     read("23_payments_after_the_sale.sql"),
+    `-- ===== staging marker =====
+-- The weekly refresh (.github/workflows/staging-refresh.yml) empties and
+-- refills a database only if it holds this row. Never create it on live.
+create schema if not exists mk4_staging;
+revoke all on schema mk4_staging from public, anon, authenticated;
+create table if not exists mk4_staging.marker (note text not null);
+alter table mk4_staging.marker enable row level security;
+revoke all on mk4_staging.marker from public, anon, authenticated;
+insert into mk4_staging.marker (note)
+select 'MK4 STAGING. The weekly refresh only writes to a database with this row. Never create it on live.'
+ where not exists (select 1 from mk4_staging.marker);`,
     `-- ===== test workers (staging only) =====
 insert into public.workers (name, role, status, commission_mode, commission_value, notes)
 select v.name, 'Worker', 'Active', 'inherit', 0, 'Staging test worker'
