@@ -118,7 +118,19 @@ are public; never put a secret key there.
 2. If the change has a migration, run it in the **staging** project's SQL
    Editor first, then check it on the staging site.
 3. When it is right, run the migration on live (if there is one, in the order
-   the file says), then merge `staging` into `main` and push.
+   the file says), then merge `staging` into `main` and push:
+
+   ```bash
+   git checkout main
+   git merge --no-ff staging
+   git push
+   ```
+
+   `--no-ff` matters. Vercel never builds a commit it has already deployed,
+   and staging's commits have been, so a fast-forward merge could leave the
+   live site on the old version. The merge commit is new, so it builds. For
+   the same reason, pushing `staging` builds nothing until it has a commit of
+   its own.
 
 **Logins on staging** are separate from live's. Create them in the staging
 project (Authentication → Users → Add user, **Auto Confirm User** ticked):
