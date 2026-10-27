@@ -20,12 +20,14 @@ name: Staging Refresh
 # migration being tried there survives the refresh. Its test sales and any
 # employee changes made there are replaced each week.
 #
-# Setup: two repo secrets (Settings -> Secrets and variables -> Actions):
-#   SUPABASE_DB_URL  live's "Session pooler" connection string, with its
-#                    database password (the backups use the same one)
-#   STAGING_DB_URL   staging's "Session pooler" connection string, with the
-#                    staging database password
-# Until both exist, each run skips with a warning instead of failing.
+# Setup: two repo secrets (Settings -> Secrets and variables -> Actions),
+# each just a database password (Supabase -> Database -> Settings):
+#   LIVE_DB_PASSWORD     the live project's (the backups use it too)
+#   STAGING_DB_PASSWORD  the staging project's
+# scripts/supabase-db-url.sh turns each into a connection string. A full
+# "Session pooler" string in SUPABASE_DB_URL or STAGING_DB_URL is used
+# instead when present. Until both projects have one or the other, each run
+# skips with a warning instead of failing.
 
 on:
   schedule:
@@ -44,47 +46,69 @@ jobs:
     timeout-minutes: 15
     env:
       LIVE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      LIVE_DB_PASSWORD: ${{ secrets.LIVE_DB_PASSWORD }}
       STAGING_DB_URL: ${{ secrets.STAGING_DB_URL }}
+      STAGING_DB_PASSWORD: ${{ secrets.STAGING_DB_PASSWORD }}
     steps:
       - name: Check secrets are configured
         id: secrets
         run: |
-          set -euo pipefail
-          if [ -z "${LIVE_DB_URL:-}" ] || [ -z "${STAGING_DB_URL:-}" ]; then
-            echo "::warning::Staging was not refreshed. Add the SUPABASE_DB_URL and STAGING_DB_URL repo secrets to turn this on."
+          if { [ -z "${LIVE_DB_URL:-}" ] && [ -z "${LIVE_DB_PASSWORD:-}" ]; } ||
+             { [ -z "${STAGING_DB_URL:-}" ] && [ -z "${STAGING_DB_PASSWORD:-}" ]; }; then
+            echo "::warning::Staging was not refreshed. Add the LIVE_DB_PASSWORD and STAGING_DB_PASSWORD repo secrets to turn this on."
             echo "configured=false" >> "$GITHUB_OUTPUT"
-            exit 0
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
-          # Each address must name its own project, and never the other's.
-          case "$LIVE_DB_URL" in
-            *vsxwwgglvckbjxvifxuw*) ;;
-            *) echo "::error::SUPABASE_DB_URL is not the live project's connection string."; exit 1 ;;
-          esac
-          case "$STAGING_DB_URL" in
-            *vsxwwgglvckbjxvifxuw*) echo "::error::STAGING_DB_URL points at the live project. Nothing was changed."; exit 1 ;;
-            *hoezwrpnhgyltrqbomdc*) ;;
-            *) echo "::error::STAGING_DB_URL is not the staging project's connection string."; exit 1 ;;
-          esac
-          echo "configured=true" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
         if: steps.secrets.outputs.configured == 'true'
+
+      # psql logs in and loads the copy. Installed only if the runner image
+      # lacks it.
+      - name: Make sure psql is installed
+        if: steps.secrets.outputs.configured == 'true'
+        run: command -v psql || (sudo apt-get update -q && sudo apt-get install -yq postgresql-client)
+
+      - name: Connect to both projects
+        if: steps.secrets.outputs.configured == 'true'
+        run: |
+          set -euo pipefail
+          live="${LIVE_DB_URL:-}"
+          staging="${STAGING_DB_URL:-}"
+          if [ -z "$live" ]; then
+            live=$(DB_PASSWORD="$LIVE_DB_PASSWORD" bash scripts/supabase-db-url.sh vsxwwgglvckbjxvifxuw aws-1-ap-northeast-2.pooler.supabase.com)
+          fi
+          if [ -z "$staging" ]; then
+            staging=$(DB_PASSWORD="$STAGING_DB_PASSWORD" bash scripts/supabase-db-url.sh hoezwrpnhgyltrqbomdc aws-0-ap-northeast-1.pooler.supabase.com)
+          fi
+          # The strings hold the passwords: hidden from every log line after this.
+          echo "::add-mask::$live"
+          echo "::add-mask::$staging"
+          # Each must name its own project, and never the other's.
+          case "$live" in
+            *vsxwwgglvckbjxvifxuw*) ;;
+            *) echo "::error::The live connection is not to the live project."; exit 1 ;;
+          esac
+          case "$staging" in
+            *vsxwwgglvckbjxvifxuw*) echo "::error::The staging connection points at the live project. Nothing was changed."; exit 1 ;;
+            *hoezwrpnhgyltrqbomdc*) ;;
+            *) echo "::error::The staging connection is not to the staging project."; exit 1 ;;
+          esac
+          echo "LIVE_URL=$live" >> "$GITHUB_ENV"
+          echo "STAGING_URL=$staging" >> "$GITHUB_ENV"
+          echo "Connected to both projects."
 
       - uses: supabase/setup-cli@v1
         if: steps.secrets.outputs.configured == 'true'
         with:
           version: latest
 
-      # psql loads the copy. Installed only if the runner image lacks it.
-      - name: Make sure psql is installed
-        if: steps.secrets.outputs.configured == 'true'
-        run: command -v psql || (sudo apt-get update -q && sudo apt-get install -yq postgresql-client)
-
       - name: Copy the live data (read only)
         if: steps.secrets.outputs.configured == 'true'
         run: |
           set -euo pipefail
-          supabase db dump --db-url "$LIVE_DB_URL" --data-only --use-copy --schema public -f live-data.sql
+          supabase db dump --db-url "$LIVE_URL" --data-only --use-copy --schema public -f live-data.sql
           ls -l live-data.sql
           # A transaction statement inside the dump would end the one the load
           # runs in, and a failure after it could leave staging half done.
@@ -112,6 +136,6 @@ jobs:
             cat scripts/staging-refresh/2-mask.sql
           } > refresh.sql
           rm live-data.sql
-          psql "$STAGING_DB_URL" --no-psqlrc --quiet --single-transaction \
+          psql "$STAGING_URL" --no-psqlrc --quiet --single-transaction \
             --set ON_ERROR_STOP=1 --file refresh.sql
           rm refresh.sql

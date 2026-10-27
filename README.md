@@ -166,10 +166,18 @@ across as they are, so staging's totals match live's. It only reads live,
 writes only to a database holding the `mk4_staging.marker` row (which live
 never has), and does it all in one transaction. Staging keeps its logins and
 its own structure, so a migration being tried there survives; its test sales
-are replaced. It needs two repo secrets, `SUPABASE_DB_URL` (live's Session
-pooler connection string, the same one the backups use) and `STAGING_DB_URL`
-(staging's); until then it skips. Run it by hand from the Actions tab
-whenever staging should catch up sooner.
+are replaced. It needs two repo secrets, each just a database password:
+`LIVE_DB_PASSWORD` (the backups use it too) and `STAGING_DB_PASSWORD`; until
+then it skips. Run it by hand from the Actions tab whenever staging should
+catch up sooner.
+
+**Adding a database password as a secret:** in the project's Supabase
+dashboard, **Database → Settings → Database password → Reset password**,
+**Generate a password**, copy it, save. Then GitHub → this repo → **Settings
+→ Secrets and variables → Actions → New repository secret**, give the name
+and paste the password. Resetting is safe: the app, Keep-Alive and the Logins function use
+API keys, never the database password. `scripts/supabase-db-url.sh` builds
+the connection string from it, so nothing else needs copying.
 
 After a refresh the staging logins open as live's employees: the admin login
 as live's admin, and the shared worker and secretary logins as live's
@@ -196,6 +204,6 @@ log in, change the shared worker password on the Logins page (that logs every
 device out), then log the shop devices back in with the new one.
 
 **Backups:** the free plan has none. `Supabase Backup` (GitHub Actions) takes an
-encrypted daily dump once the `SUPABASE_DB_URL` (Session pooler connection
-string) and `BACKUP_PASSPHRASE` repo secrets are set; until then, export Sales
-Records to CSV now and then.
+encrypted daily dump once the `LIVE_DB_PASSWORD` and `BACKUP_PASSPHRASE` repo
+secrets are set (keep a copy of the passphrase: no backup opens without it);
+until then, export Sales Records to CSV now and then.
