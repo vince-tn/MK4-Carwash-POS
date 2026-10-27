@@ -1,0 +1,123 @@
+name: Apply Migration
+
+# Runs one SQL file from this repo on the staging or the live database, so a
+# migration does not have to be pasted into the Supabase SQL Editor.
+#
+# The usual order (README, Staging):
+#   1. Run it on STAGING, with "Use workflow from" set to the staging branch.
+#   2. Check the change on the staging site.
+#   3. Run the same file on LIVE, from the staging branch, typing LIVE in
+#      the confirm box. Then merge staging into main.
+#
+# Safety:
+#   - The whole file runs in one transaction and stops at the first error,
+#     so a failure leaves the database exactly as it was. Every migration in
+#     supabase/ also checks its own work at the end.
+#   - Staging: only a database holding the mk4_staging.marker row. Any SQL
+#     file in the repo, so rollback-only tests can run there too.
+#   - Live: only a numbered migration in supabase/, only when the confirm
+#     box says LIVE, and never a database with the staging marker.
+#   - The log is public (public repository): it shows only what psql prints,
+#     so the files print nothing private.
+#
+# Needs the LIVE_DB_PASSWORD and STAGING_DB_PASSWORD repo secrets
+# (scripts/supabase-db-url.sh).
+
+on:
+  workflow_dispatch:
+    inputs:
+      file:
+        description: "SQL file to run, e.g. supabase/24_add_to_a_sale.sql"
+        required: true
+      project:
+        description: "Which database"
+        required: true
+        type: choice
+        options:
+          - staging
+          - live
+        default: staging
+      confirm:
+        description: "For live only: type LIVE"
+        required: false
+        default: ""
+
+concurrency:
+  group: database-changes
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      FILE: ${{ inputs.file }}
+      PROJECT: ${{ inputs.project }}
+      CONFIRM: ${{ inputs.confirm }}
+      LIVE_DB_PASSWORD: ${{ secrets.LIVE_DB_PASSWORD }}
+      STAGING_DB_PASSWORD: ${{ secrets.STAGING_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the request
+        run: |
+          set -euo pipefail
+          case "$FILE" in
+            *..*) echo "::error::No .. in the path."; exit 1 ;;
+          esac
+          if [ ! -f "$FILE" ]; then
+            echo "::error::$FILE is not in this branch."; exit 1
+          fi
+          if [ "$PROJECT" = "live" ]; then
+            if ! printf '%s' "$FILE" | grep -Eq '^supabase/[0-9]{2}_[a-z0-9_]+\.sql$'; then
+              echo "::error::Live only takes a numbered migration from supabase/."; exit 1
+            fi
+            if [ "$CONFIRM" != "LIVE" ]; then
+              echo "::error::Type LIVE in the confirm box to change the live database. Nothing was changed."; exit 1
+            fi
+          elif [ "$PROJECT" != "staging" ]; then
+            echo "::error::Unknown project $PROJECT."; exit 1
+          else
+            if ! printf '%s' "$FILE" | grep -Eq '\.sql$'; then
+              echo "::error::Only .sql files."; exit 1
+            fi
+          fi
+          echo "Running $FILE ($(wc -c < "$FILE") bytes, sha256 $(sha256sum "$FILE" | cut -c1-12)) on $PROJECT."
+
+      - name: Make sure psql is installed
+        run: command -v psql || (sudo apt-get update -q && sudo apt-get install -yq postgresql-client)
+
+      - name: Connect
+        run: |
+          set -euo pipefail
+          if [ "$PROJECT" = "live" ]; then
+            url=$(DB_PASSWORD="$LIVE_DB_PASSWORD" bash scripts/supabase-db-url.sh vsxwwgglvckbjxvifxuw aws-1-ap-northeast-2.pooler.supabase.com)
+          else
+            url=$(DB_PASSWORD="$STAGING_DB_PASSWORD" bash scripts/supabase-db-url.sh hoezwrpnhgyltrqbomdc aws-0-ap-northeast-1.pooler.supabase.com)
+          fi
+          # The string holds the password: hidden from every log line after this.
+          echo "::add-mask::$url"
+          echo "DB_URL=$url" >> "$GITHUB_ENV"
+
+          # The marker row is only ever on staging. Two queries: one naming a
+          # table that does not exist would fail instead of answering.
+          q() { psql "$url" --no-psqlrc --quiet --tuples-only --no-align --command "$1"; }
+          marker="not staging"
+          if [ "$(q "select to_regclass('mk4_staging.marker') is not null")" = "t" ] &&
+             [ "$(q "select count(*) > 0 from mk4_staging.marker")" = "t" ]; then
+            marker="staging"
+          fi
+          if [ "$PROJECT" = "staging" ] && [ "$marker" != "staging" ]; then
+            echo "::error::That database has no staging marker. Nothing was changed."; exit 1
+          fi
+          if [ "$PROJECT" = "live" ] && [ "$marker" = "staging" ]; then
+            echo "::error::The live connection reached the staging database. Nothing was changed."; exit 1
+          fi
+          echo "Connected to $PROJECT."
+
+      - name: Run it
+        run: |
+          set -euo pipefail
+          psql "$DB_URL" --no-psqlrc --quiet --single-transaction \
+            --set ON_ERROR_STOP=1 --file "$FILE"
+          echo "Done: $FILE ran on $PROJECT and was kept."

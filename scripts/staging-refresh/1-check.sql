@@ -5,8 +5,13 @@
 -- never does, so a mistaken address cannot empty the shop's data.
 do $$
 begin
-  if to_regclass('mk4_staging.marker') is null
-     or not exists (select 1 from mk4_staging.marker) then
+  -- Two checks, not one: a query naming a table that does not exist fails
+  -- with a less helpful message than this.
+  if to_regclass('mk4_staging.marker') is null then
+    raise exception 'This is not the staging database (no mk4_staging.marker table). Nothing was changed.';
+  end if;
+
+  if not exists (select 1 from mk4_staging.marker) then
     raise exception 'This is not the staging database (no mk4_staging.marker row). Nothing was changed.';
   end if;
 end $$;
