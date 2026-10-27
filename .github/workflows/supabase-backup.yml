@@ -1,20 +1,21 @@
 name: Supabase Backup
 
-# The free plan has no backups. A mistaken delete cannot be undone, and
-# deleting a worker deletes every sale recorded against them. This dumps the
-# database once a day, encrypts it, and keeps it as a workflow artifact for
-# 30 days, so there is always a recent copy to restore from.
+# The free plan has no backups, and a mistaken change cannot be undone. This
+# dumps the database once a day, encrypts it, and keeps it as a workflow
+# artifact for 30 days, so there is always a recent copy to restore from.
 #
 # The dump holds customer names, phone numbers and plate numbers, and the
 # artifacts of a public repository can be downloaded by anyone signed in to
 # GitHub. So the dump is encrypted with a passphrase before it is uploaded.
 #
 # Setup: add two repo secrets (Settings -> Secrets and variables -> Actions):
-#   SUPABASE_DB_URL    The "Session pooler" connection string from the
-#                      Supabase dashboard (Connect -> Session pooler), with
-#                      the database password filled in. Not the "Direct
-#                      connection": on the free plan that one is IPv6 only,
-#                      and GitHub's runners cannot reach it.
+#   LIVE_DB_PASSWORD   The live database password (Supabase -> Database ->
+#                      Settings). Staging Refresh uses it too.
+#                      scripts/supabase-db-url.sh turns it into the "Session
+#                      pooler" connection string (the "Direct connection" is
+#                      IPv6 only on the free plan, which GitHub cannot reach).
+#                      A full string in SUPABASE_DB_URL is used instead when
+#                      present.
 #   BACKUP_PASSPHRASE  A long random passphrase. Keep a copy somewhere safe:
 #                      without it no backup can be opened.
 # Until both exist, each run skips with a warning instead of failing.
@@ -41,17 +42,40 @@ jobs:
     timeout-minutes: 15
     env:
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      LIVE_DB_PASSWORD: ${{ secrets.LIVE_DB_PASSWORD }}
       BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
     steps:
       - name: Check secrets are configured
         id: secrets
         run: |
-          if [ -z "${SUPABASE_DB_URL:-}" ] || [ -z "${BACKUP_PASSPHRASE:-}" ]; then
-            echo "::warning::No backup taken. Add the SUPABASE_DB_URL and BACKUP_PASSPHRASE repo secrets to turn backups on."
+          if { [ -z "${SUPABASE_DB_URL:-}" ] && [ -z "${LIVE_DB_PASSWORD:-}" ]; } || [ -z "${BACKUP_PASSPHRASE:-}" ]; then
+            echo "::warning::No backup taken. Add the LIVE_DB_PASSWORD and BACKUP_PASSPHRASE repo secrets to turn backups on."
             echo "configured=false" >> "$GITHUB_OUTPUT"
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
+
+      - uses: actions/checkout@v4
+        if: steps.secrets.outputs.configured == 'true'
+
+      # psql logs in to find the connection. Installed only if the runner
+      # image lacks it.
+      - name: Make sure psql is installed
+        if: steps.secrets.outputs.configured == 'true'
+        run: command -v psql || (sudo apt-get update -q && sudo apt-get install -yq postgresql-client)
+
+      - name: Connect to the live project
+        if: steps.secrets.outputs.configured == 'true'
+        run: |
+          set -euo pipefail
+          live="${SUPABASE_DB_URL:-}"
+          if [ -z "$live" ]; then
+            live=$(DB_PASSWORD="$LIVE_DB_PASSWORD" bash scripts/supabase-db-url.sh vsxwwgglvckbjxvifxuw aws-1-ap-northeast-2.pooler.supabase.com)
+          fi
+          # The string holds the password: hidden from every log line after this.
+          echo "::add-mask::$live"
+          echo "LIVE_URL=$live" >> "$GITHUB_ENV"
+          echo "Connected."
 
       - uses: supabase/setup-cli@v1
         if: steps.secrets.outputs.configured == 'true'
@@ -63,9 +87,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir backup
-          supabase db dump --db-url "$SUPABASE_DB_URL" -f backup/roles.sql --role-only
-          supabase db dump --db-url "$SUPABASE_DB_URL" -f backup/schema.sql
-          supabase db dump --db-url "$SUPABASE_DB_URL" -f backup/data.sql --data-only --use-copy
+          supabase db dump --db-url "$LIVE_URL" -f backup/roles.sql --role-only
+          supabase db dump --db-url "$LIVE_URL" -f backup/schema.sql
+          supabase db dump --db-url "$LIVE_URL" -f backup/data.sql --data-only --use-copy
           ls -l backup
 
       - name: Encrypt
