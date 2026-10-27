@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { summarise, moneyTaken, amountFor } from "./totals.js";
+import { summarise, moneyTaken, amountFor, unpaid, saleValue } from "./totals.js";
 
 function sale(fields) {
   return {
@@ -61,7 +61,7 @@ test("a sale from before bank existed still totals correctly", () => {
   assert.equal(moneyTaken(old), 11890);
 });
 
-test("the discount and an unpaid balance are reported, never folded in", () => {
+test("Total Sales is what was taken plus what is still owed, never the discount", () => {
   const discounted = sale({
     paymentEnabled: { cash: true, discount: true },
     cash: 220,
@@ -77,16 +77,31 @@ test("the discount and an unpaid balance are reported, never folded in", () => {
 
   const totals = summarise([discounted, partPaid]);
 
-  assert.equal(totals.sales, 320, "sales is what was taken");
+  assert.equal(totals.sales, 480, "320 taken + 160 unpaid");
   assert.equal(totals.discount, 80, "discount reported separately");
-  assert.equal(totals.balance, 160, "unpaid reported separately");
+  assert.equal(totals.balance, 160, "unpaid shown on its own as well");
   assert.equal(totals.cars, 2);
+  assert.equal(
+    totals.sales,
+    totals.cash + totals.gcash + totals.credit + totals.bank + totals.balance,
+    "the parts add up to the total"
+  );
+});
+
+test("one sale's value is what was taken plus what it still owes", () => {
+  const partPaid = sale({ paymentEnabled: { cash: true }, cash: 100, balance: 160 });
+  const overpaid = sale({ paymentEnabled: { cash: true }, cash: 6500, balance: -1000 });
+
+  assert.equal(unpaid(partPaid), 160);
+  assert.equal(saleValue(partPaid), 260);
+  assert.equal(unpaid(overpaid), 0, "an overpaid sale owes nothing");
+  assert.equal(saleValue(overpaid), 6500, "and counts what was paid");
 });
 
 test("the shop's own figures for 2026-10-07 come out right", () => {
   // 38 cars, 8,410 cash and 3,480 GCash: 11,890 taken, with 280 of discount
-  // given and 160 still owed. These are the live numbers the change was
-  // checked against.
+  // given and 160 still owed. These are the live numbers the money-taken
+  // change was checked against; with Unpaid included they make 12,050.
   const orders = [
     sale({ paymentEnabled: { cash: true }, cash: 8410 }),
     sale({ paymentEnabled: { gcash: true }, gcash: 3480 }),
@@ -96,7 +111,7 @@ test("the shop's own figures for 2026-10-07 come out right", () => {
 
   const totals = summarise(orders);
 
-  assert.equal(totals.sales, 11890);
+  assert.equal(totals.sales, 12050);
   assert.equal(totals.cash, 8410);
   assert.equal(totals.gcash, 3480);
   assert.equal(totals.discount, 280);
@@ -177,4 +192,5 @@ test("an overpaid sale owes nothing and does not cancel what others owe", () => 
 
   const totals = summarise([...owing, ...overpaid]);
   assert.equal(totals.balance, 38600, "unpaid is what is owed");
+  assert.equal(totals.sales, 38600, "and Total Sales takes no money off for overpayment");
 });

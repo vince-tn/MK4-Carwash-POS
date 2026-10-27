@@ -1311,6 +1311,12 @@ td {
   .report-controls .push-right {
     margin-left: 0;
   }
+
+  /* Four date choices do not fit across a phone in one row. */
+  .commission-presets {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 /* Services & pricing admin page */
@@ -1874,6 +1880,35 @@ td {
     margin-top: auto;
   }
 
+  /* The pages, as in the sidebar. */
+  .mobile-drawer-nav {
+    display: grid;
+    gap: 6px;
+    margin-bottom: 18px;
+  }
+
+  .mobile-drawer-nav button {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    color: #d4d4d8;
+    padding: 12px 14px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font: inherit;
+    font-weight: 700;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .mobile-drawer-nav button.active {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    box-shadow: inset 4px 0 0 var(--red);
+  }
+
   .mobile-drawer .brand-logo-wrap {
     width: 56px;
     height: 44px;
@@ -2133,6 +2168,30 @@ td {
     grid-column: 1;
     grid-row: auto;
   }
+}
+
+/* Services and add-ons added to a recorded sale (components/AddToSale.jsx),
+   in the same card style as the payments after the sale. */
+.sale-lines .service-list {
+  margin: 4px 0 12px;
+}
+
+.sale-lines .addon-box {
+  margin-top: 14px;
+}
+
+.sale-lines-preview {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding: 10px 12px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--black);
 }
 
 /* Staging only (components/StagingBadge.jsx). Above everything, modals

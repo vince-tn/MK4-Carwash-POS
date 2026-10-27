@@ -11,8 +11,8 @@ test("each role opens exactly the pages the client specified", () => {
     ["before roles, signed out", legacy, false, ["form", "login"], "form"],
     ["before roles, signed in", legacy, true, ["form", "dashboard", "records", "workers", "services"], "dashboard"],
     ["signed out", role(null), false, ["login"], "login"],
-    ["admin", role("admin"), true, ["dashboard", "records", "workers", "logins", "services"], "dashboard"],
-    ["secretary", role("secretary"), true, ["form", "records", "workers"], "records"],
+    ["admin", role("admin"), true, ["dashboard", "records", "commissions", "workers", "logins", "services"], "dashboard"],
+    ["secretary", role("secretary"), true, ["form", "records", "commissions", "workers"], "records"],
     ["worker", role("worker"), true, ["form"], "form"],
     ["login with no active employee", role(null), true, [], null],
   ];

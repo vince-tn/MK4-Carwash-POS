@@ -120,4 +120,6 @@ jobs:
           set -euo pipefail
           psql "$DB_URL" --no-psqlrc --quiet --single-transaction \
             --set ON_ERROR_STOP=1 --file "$FILE"
-          echo "Done: $FILE ran on $PROJECT and was kept."
+          # A test file ends in ROLLBACK, and psql then warns "there is no
+          # transaction in progress": that file kept nothing.
+          echo "Done: $FILE ran on $PROJECT."

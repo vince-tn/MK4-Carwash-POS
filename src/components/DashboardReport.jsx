@@ -21,7 +21,8 @@ function describeServices(order) {
 
 /*
  * Mode-specific expanded reports for the Admin Dashboard stat boxes.
- * - sales: payment method breakdown (Cash / GCash / Credit / Discounts) per period
+ * - sales: Cash / GCash / Credit / Bank / Unpaid (they add up to Total Sales)
+ *   and Discounts per period
  * - cars: cars washed per period, broken down by car type
  * - commission: commission per worker per period
  *
@@ -62,13 +63,15 @@ export default function DashboardReport({ orders, mode }) {
         { label: "GCash", money: true },
         { label: "Credit", money: true },
         { label: "Bank", money: true },
+        { label: "Unpaid", money: true },
         { label: "Discounts", money: true },
         { label: "Total Sales", money: true },
       ];
 
       const rows = periodKeys.map((key) => {
         // Same helper the dashboard tiles and Sales Records use, so Total
-        // Sales here is money taken and cannot drift from either of them.
+        // Sales here (Cash + GCash + Credit + Bank + Unpaid) cannot drift
+        // from either of them.
         const t = summarise(grouped[key]);
 
         return [
@@ -78,6 +81,7 @@ export default function DashboardReport({ orders, mode }) {
           t.gcash,
           t.credit,
           t.bank,
+          t.balance,
           t.discount,
           t.sales,
         ];

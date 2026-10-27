@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from "react";
 import { Download } from "lucide-react";
-import { moneyTaken, summarise } from "../lib/totals";
+import { saleValue, summarise } from "../lib/totals";
 import {
   peso,
   csvSafe,
@@ -40,7 +40,7 @@ export default function WorkerReports({
     const byWorker = new Map();
 
     for (const order of row.orders) {
-      const taken = moneyTaken(order);
+      const value = saleValue(order);
 
       for (const service of order.services || []) {
         const name = [service.category, service.size]
@@ -62,7 +62,7 @@ export default function WorkerReports({
       const who = order.washerName || "Unknown";
       const worker = byWorker.get(who) || { name: who, cars: 0, sales: 0 };
       worker.cars += 1;
-      worker.sales += taken;
+      worker.sales += value;
       byWorker.set(who, worker);
     }
 
@@ -97,15 +97,15 @@ export default function WorkerReports({
         };
       }
 
-      const taken = moneyTaken(order);
+      const value = saleValue(order);
 
       map[key].cars += 1;
-      map[key].sales += taken;
+      map[key].sales += value;
       map[key].commission += Number(order.commission || 0);
       map[key].orders.push(order);
 
       const name = order.washerName || "Unknown";
-      map[key].workerTotals[name] = (map[key].workerTotals[name] || 0) + taken;
+      map[key].workerTotals[name] = (map[key].workerTotals[name] || 0) + value;
     });
 
     return Object.values(map)
@@ -140,7 +140,7 @@ export default function WorkerReports({
       }
 
       map[name].cars += 1;
-      map[name].sales += moneyTaken(order);
+      map[name].sales += saleValue(order);
       map[name].commission += Number(order.commission || 0);
     });
 

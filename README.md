@@ -14,8 +14,8 @@ Everyone logs in. The role on the employee's record decides what opens:
 
 | Role | Opens | Login |
 |---|---|---|
-| Admin | Dashboard, Sales Records, Employees, Logins, Services | their own |
-| Secretary | Worker Form (for any worker), Sales Records, Employees | shared `secretary@mk4.pos` |
+| Admin | Dashboard, Sales Records, Commission Report, Employees, Logins, Services | their own |
+| Secretary | Worker Form (for any worker), Sales Records, Commission Report, Employees | shared `secretary@mk4.pos` |
 | Worker | Worker Form; the sale is filed under the name they pick | shared `worker@mk4.pos` |
 
 An employee's **Login Email** links them to a login. A Worker or Secretary
@@ -115,10 +115,14 @@ are public; never put a secret key there.
 **Working through staging:**
 
 1. Commit to `staging` and push. The staging site updates in a minute or two.
-2. If the change has a migration, run it in the **staging** project's SQL
-   Editor first, then check it on the staging site.
-3. When it is right, run the migration on live (if there is one, in the order
-   the file says), then merge `staging` into `main` and push:
+2. If the change has a migration, run it on **staging** first: GitHub →
+   Actions → **Apply Migration** → Run workflow, with the file (for example
+   `supabase/24_add_to_a_sale.sql`) and project `staging`. Then check it on
+   the staging site. A file in `scripts/staging-tests/` can be run the same
+   way: it tests the migration on staging and undoes everything.
+3. When it is right, run the same file on live (Apply Migration, project
+   `live`, type `LIVE` in the confirm box), in the order the file says, then
+   merge `staging` into `main` and push:
 
    ```bash
    git checkout main
