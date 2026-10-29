@@ -2,6 +2,7 @@ import { Component, lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   BarChart3,
   ClipboardList,
+  Coins,
   Droplets,
   KeyRound,
   LayoutDashboard,
@@ -29,6 +30,7 @@ const loadPage = {
   form: () => import("./components/WorkerForm"),
   dashboard: () => import("./components/AdminDashboard"),
   records: () => import("./components/SalesRecords"),
+  commissions: () => import("./components/CommissionReport"),
   workers: () => import("./components/WorkerManagement"),
   logins: () => import("./components/LoginsManagement"),
   services: () => import("./components/ServicesManagement"),
@@ -37,6 +39,7 @@ const loadPage = {
 const WorkerForm = lazy(loadPage.form);
 const AdminDashboard = lazy(loadPage.dashboard);
 const SalesRecords = lazy(loadPage.records);
+const CommissionReport = lazy(loadPage.commissions);
 const WorkerManagement = lazy(loadPage.workers);
 const LoginsManagement = lazy(loadPage.logins);
 const ServicesManagement = lazy(loadPage.services);
@@ -119,6 +122,9 @@ const NAV = [
   { page: "form", label: "Worker Form", short: "Form", icon: ClipboardList },
   { page: "dashboard", label: "Admin Dashboard", short: "Dashboard", icon: LayoutDashboard },
   { page: "records", label: "Sales Records", short: "Sales", icon: BarChart3 },
+  // spare: left out of the phone bottom bar when six pages would not fit
+  // there (admins); the menu lists it.
+  { page: "commissions", label: "Commission Report", short: "Commission", icon: Coins, spare: true },
   { page: "workers", label: "Employees", short: "Employees", icon: UsersRound },
   { page: "logins", label: "Logins", short: "Logins", icon: KeyRound },
   { page: "services", label: "Services", short: "Services", icon: Droplets },
@@ -129,6 +135,7 @@ const PAGE_TITLES = {
   form: "Worker Carwash Entry",
   dashboard: "Admin Analytics Dashboard",
   records: "Sales Order Records",
+  commissions: "Commission Report",
   workers: "Employees and Commission",
   logins: "Staff Logins",
   services: "Services and Pricing",
@@ -271,6 +278,9 @@ export default function App() {
   const navItems = NAV.filter((item) => can.pages.includes(item.page));
   // A bottom bar with one button goes nowhere, so a worker's phone has none.
   const hasBottomNav = navItems.length > 1;
+  // Five buttons fit across a 375px phone; six cut their labels off.
+  const barItems =
+    navItems.length > 5 ? navItems.filter((item) => !item.spare) : navItems;
 
   useEffect(() => {
     if (!menuOpen) return undefined;
@@ -569,6 +579,15 @@ export default function App() {
     replaceOrder(await db.removeOrderPayment(order.dbId, paymentId));
   }
 
+  // Services and add-ons added to a recorded sale. Errors go back to the
+  // window, which says what went wrong and keeps what was chosen.
+  async function addToSale(orderId, lines) {
+    const order = [...orders, ...archivedOrders].find((item) => item.id === orderId);
+    if (!order) throw new Error("That sale is no longer on screen. Reload and try again.");
+
+    replaceOrder(await db.addToSale(order.dbId, lines));
+  }
+
   async function restoreOrder(orderId) {
     const order = archivedOrders.find((item) => item.id === orderId);
     if (!order) return;
@@ -802,7 +821,7 @@ export default function App() {
 
       {hasBottomNav && (
         <nav className="bottom-nav" aria-label="Pages">
-          {navItems.map(({ page, short, icon: Icon }) => (
+          {barItems.map(({ page, short, icon: Icon }) => (
             <button
               key={page}
               type="button"
@@ -846,6 +865,25 @@ export default function App() {
                 <X size={20} />
               </button>
             </div>
+
+            {/* Every page, including any the bottom bar has no room for. */}
+            <nav className="mobile-drawer-nav" aria-label="All pages">
+              {navItems.map(({ page, label, icon: Icon }) => (
+                <button
+                  key={page}
+                  type="button"
+                  className={currentPage === page ? "active" : ""}
+                  aria-current={currentPage === page ? "page" : undefined}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    goToPageFromBottomBar(page);
+                  }}
+                >
+                  <Icon size={18} />
+                  {label}
+                </button>
+              ))}
+            </nav>
 
             {access?.installed && access.role && (
               <div className="signed-in-as">
@@ -936,9 +974,17 @@ export default function App() {
                 onUpdateOrderPayment={updateOrderPayment}
                 onAddPayment={addOrderPayment}
                 onRemovePayment={removeOrderPayment}
+                onAddToSale={addToSale}
+                pricingData={pricing.categories}
+                addOns={pricing.addOns}
+                commissionSettings={commissionSettings}
                 onArchiveOrder={archiveOrder}
                 onRestoreOrder={restoreOrder}
               />
+            )}
+
+            {currentPage === "commissions" && (
+              <CommissionReport orders={orders} workers={workers} />
             )}
 
             {currentPage === "services" && (

@@ -4,8 +4,9 @@
  * access comes from db.fetchAccess(). installed is false until
  * supabase/14_roles.sql has run, and the app then keeps its old behavior: a
  * public Worker Form, and every login sees everything. Once it has run:
- *   Admin      Dashboard, Sales Records, Employees, Logins, Services
- *   Secretary  Worker Form, Sales Records, Employees
+ *   Admin      Dashboard, Sales Records, Commission Report, Employees,
+ *              Logins, Services
+ *   Secretary  Worker Form, Sales Records, Commission Report, Employees
  *   Worker     Worker Form
  * and a signed-out visitor gets only the login page. The database enforces
  * the same rules; this only decides what is shown.
@@ -61,7 +62,7 @@ export function accessFor(access, isLoggedIn) {
 
   if (access.role === "admin") {
     return {
-      pages: ["dashboard", "records", "workers", "logins", "services"],
+      pages: ["dashboard", "records", "commissions", "workers", "logins", "services"],
       home: "dashboard",
       loadPricing: true,
       loadCommission: true,
@@ -76,10 +77,11 @@ export function accessFor(access, isLoggedIn) {
 
   if (access.role === "secretary") {
     // The Worker Form too (client request, 2026-10-07): a secretary records
-    // sales for any active worker. Still lands on Sales Records.
+    // sales for any active worker. Still lands on Sales Records. The
+    // Commission Report too (client request, 2026-10-27).
     return {
       ...NOTHING,
-      pages: ["form", "records", "workers"],
+      pages: ["form", "records", "commissions", "workers"],
       home: "records",
       loadPricing: true,
       loadCommission: true,

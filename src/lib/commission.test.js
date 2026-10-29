@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { calculateCommission, centavos } from "./commission.js";
+import { calculateCommission, centavos, commissionForAddedLines } from "./commission.js";
 
 const globalServicePercent = { globalMode: "service_percent", globalValue: 0 };
 const inherit = { commissionMode: "inherit", commissionValue: 0 };
@@ -107,4 +107,44 @@ test("the breakdown always adds up to the total, to the centavo", () => {
     centavos(777 * 0.3);
 
   assert.equal(result.commission, centavos(lines));
+});
+
+test("lines added to a sale later earn their own commission", () => {
+  // A 500 service @ 30% and a 1,000 add-on @ 12% added to a recorded sale.
+  const added = commissionForAddedLines({
+    services: [wash(500)],
+    addOnLines: [addOn(1000, 12)],
+    worker: inherit,
+    commissionSettings: globalServicePercent,
+  });
+
+  assert.deepEqual(added.serviceCommissions, [150]);
+  assert.equal(added.commission, 150 + 120);
+});
+
+test("an added line never earns the flat per-order amount a second time", () => {
+  const flatPerOrder = { commissionMode: "flat_per_order", commissionValue: 100 };
+
+  const added = commissionForAddedLines({
+    services: [wash(500)],
+    addOnLines: [addOn(200, 30)],
+    worker: flatPerOrder,
+    commissionSettings: globalServicePercent,
+  });
+
+  assert.deepEqual(added.serviceCommissions, [0], "the sale was paid its flat 100 already");
+  assert.equal(added.commission, 60, "only the add-on's own 30%");
+});
+
+test("added lines follow a flat per-service rule", () => {
+  const flatPerService = { commissionMode: "flat_per_service", commissionValue: 40 };
+
+  const added = commissionForAddedLines({
+    services: [wash(500), wash(300)],
+    addOnLines: [],
+    worker: flatPerService,
+    commissionSettings: globalServicePercent,
+  });
+
+  assert.equal(added.commission, 80);
 });

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import WorkerReports from "./WorkerReports";
 import { localDateString } from "../lib/reportUtils";
 import { isSalesWorker } from "../lib/access";
-import { moneyTaken } from "../lib/totals";
+import { saleValue } from "../lib/totals";
 
 const ROLES = ["Admin", "Secretary", "Worker"];
 
@@ -62,7 +62,7 @@ function statsByWorker(orders) {
     }
 
     entry.cars += 1;
-    entry.sales += moneyTaken(order);
+    entry.sales += saleValue(order);
     entry.commission += Number(order.commission || 0);
   });
 

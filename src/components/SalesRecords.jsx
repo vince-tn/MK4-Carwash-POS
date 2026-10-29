@@ -11,6 +11,7 @@ import { supabase } from "../lib/supabaseClient";
 import { laterPaid, laterPayments, summarise } from "../lib/totals";
 import { isSalesWorker } from "../lib/access";
 import LaterPayments from "./LaterPayments";
+import AddToSale from "./AddToSale";
 
 const METHOD_LABEL = { cash: "Cash", gcash: "GCash", credit: "Credit", bank: "Bank" };
 
@@ -126,6 +127,31 @@ function commissionBreakdown(order) {
   ].filter((line) => line.amount > 0);
 }
 
+// Services and add-ons added after the sale was recorded (supabase/24),
+// oldest first, for the History panel.
+function linesAddedLater(order) {
+  return [
+    ...(order.services || [])
+      .filter((service) => service.addedBy)
+      .map((service) => ({
+        key: `service-${service.id}`,
+        label: `${service.category} - ${service.size}`,
+        price: service.price,
+        addedAt: service.addedAt,
+        addedBy: service.addedBy,
+      })),
+    ...addOnLinesOf(order)
+      .filter((line) => line.addedBy)
+      .map((line) => ({
+        key: `addon-${line.id}`,
+        label: `${addOnLabel(line)} (add-on)`,
+        price: line.price,
+        addedAt: line.addedAt,
+        addedBy: line.addedBy,
+      })),
+  ].sort((a, b) => String(a.addedAt).localeCompare(String(b.addedAt)));
+}
+
 function getPaymentMethods(order) {
   const methods = [];
 
@@ -178,7 +204,18 @@ function sortOrders(orders, sortBy) {
   return sorted;
 }
 
-function PaymentEditModal({ order, onClose, onSave, onAddPayment, onRemovePayment }) {
+function PaymentEditModal({
+  order,
+  onClose,
+  onSave,
+  onAddPayment,
+  onRemovePayment,
+  onAddToSale,
+  workers,
+  pricingData,
+  addOns,
+  commissionSettings,
+}) {
   const [paymentForm, setPaymentForm] = useState({
     paymentEnabled: {
       cash: Boolean(order.paymentEnabled?.cash),
@@ -257,7 +294,7 @@ function PaymentEditModal({ order, onClose, onSave, onAddPayment, onRemovePaymen
       <form className="payment-modal" onSubmit={handleSubmit}>
         <div className="modal-header">
           <div>
-            <span className="eyebrow">Update Payment</span>
+            <span className="eyebrow">Edit Sales Record</span>
             <h2>{order.id}</h2>
             <p>
               Plate: <strong>{order.plateNumber}</strong>
@@ -271,7 +308,7 @@ function PaymentEditModal({ order, onClose, onSave, onAddPayment, onRemovePaymen
 
         <div className="payment-summary-grid">
           <div>
-            <span>Original Service/Add-on Total</span>
+            <span>Service/Add-on Total</span>
             <strong>
               {peso.format(
                 Number(order.serviceTotal || 0) + Number(order.addOnTotal || 0)
@@ -298,6 +335,15 @@ function PaymentEditModal({ order, onClose, onSave, onAddPayment, onRemovePaymen
             </strong>
           </div>
         </div>
+
+        <AddToSale
+          order={order}
+          workers={workers}
+          pricingData={pricingData}
+          addOns={addOns}
+          commissionSettings={commissionSettings}
+          onAdd={onAddToSale}
+        />
 
         <LaterPayments
           order={order}
@@ -467,6 +513,10 @@ export default function SalesRecords({
   onUpdateOrderPayment,
   onAddPayment,
   onRemovePayment,
+  onAddToSale,
+  pricingData = [],
+  addOns = [],
+  commissionSettings,
   onArchiveOrder,
   onRestoreOrder,
 }) {
@@ -778,7 +828,7 @@ export default function SalesRecords({
             <td>
               <button
                 className="table-action-btn"
-                title="Edit payment"
+                title="Edit this sale: services, add-ons and payment"
                 onClick={(e) => {
                   e.stopPropagation();
                   setEditingPaymentOrder(order);
@@ -934,6 +984,17 @@ export default function SalesRecords({
                             </dd>
                           </>
                         )}
+
+                        {linesAddedLater(order).map((line) => (
+                          <Fragment key={line.key}>
+                            <dt>Added later</dt>
+                            <dd>
+                              {line.label} ({peso.format(line.price)}),{" "}
+                              {new Date(line.addedAt).toLocaleString()} by{" "}
+                              {line.addedBy}
+                            </dd>
+                          </Fragment>
+                        ))}
 
                         {(order.payments || []).map((payment) => (
                           <Fragment key={payment.id}>
@@ -1330,6 +1391,11 @@ export default function SalesRecords({
           onSave={onUpdateOrderPayment}
           onAddPayment={onAddPayment}
           onRemovePayment={onRemovePayment}
+          onAddToSale={onAddToSale}
+          workers={workers}
+          pricingData={pricingData}
+          addOns={addOns}
+          commissionSettings={commissionSettings}
         />
       )}
     </section>

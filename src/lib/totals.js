@@ -1,14 +1,15 @@
 /*
  * What a set of sales adds up to.
  *
- * One definition, used by both the Admin Dashboard tiles and the Sales Records
- * summary, so the two screens cannot drift apart.
+ * One definition, used by the Admin Dashboard, its reports, Sales Records,
+ * Employees and Worker Reports, so no two screens can drift apart.
  *
- * Sales means money actually taken: the payment methods added up. It is not
- * the sum of order totals, which is money BILLED and includes anything the
- * customer has not paid yet. The shop's own sheet totals cash, GCash and bank,
- * and this matches it. The discount never forms part of it either way -- an
- * order's total is already net of the discount by the time it is stored.
+ * Total Sales is the money taken (the payment methods added up) plus what
+ * customers still owe (Unpaid). Until 2026-10-27 it was the money taken
+ * alone; the client asked for Unpaid to be included. A sale paid more than
+ * its total adds what was paid and owes nothing, so Total Sales is not quite
+ * the sum of order totals. The discount never forms part of it -- an order's
+ * total is already net of the discount by the time it is stored.
  */
 
 // A payment is only counted when its box was ticked on the form. A 0.00 amount
@@ -41,6 +42,18 @@ export function moneyTaken(order) {
   );
 }
 
+// What the customer still owes. A sale paid more than its total has a
+// negative balance; it owes nothing, and must not cancel out what other sales
+// owe (it did: 36,780 showed where 38,600 was owed, 2026-10-14).
+export function unpaid(order) {
+  return Math.max(Number(order?.balance) || 0, 0);
+}
+
+// One sale's part of Total Sales: the money taken plus what is still owed.
+export function saleValue(order) {
+  return moneyTaken(order) + unpaid(order);
+}
+
 export function summarise(orders = []) {
   const totals = {
     cars: orders.length,
@@ -60,14 +73,12 @@ export function summarise(orders = []) {
     }
 
     totals.discount += amountFor(order, "discount");
-    // Unpaid is what customers still owe. A sale paid more than its total has
-    // a negative balance; it owes nothing, and must not cancel out what other
-    // sales owe (it did: 36,780 showed where 38,600 was owed, 2026-10-14).
-    totals.balance += Math.max(Number(order.balance) || 0, 0);
+    totals.balance += unpaid(order);
     totals.commission += Number(order.commission) || 0;
   }
 
-  totals.sales = totals.cash + totals.gcash + totals.credit + totals.bank;
+  totals.sales =
+    totals.cash + totals.gcash + totals.credit + totals.bank + totals.balance;
 
   return totals;
 }

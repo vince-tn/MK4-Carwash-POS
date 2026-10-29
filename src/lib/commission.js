@@ -70,5 +70,27 @@ export function calculateCommission({ services, addOnLines, worker, commissionSe
     commission,
     label: addOnCommission > 0 ? `${label} + add-ons` : label,
     serviceCommissions,
+    perOrder,
+  };
+}
+
+/*
+ * The commission on services and add-ons added to a sale after it was
+ * recorded (Sales Records). Each line earns what it would have on the Worker
+ * Form under the worker's rule as it is now, except a flat per-order amount:
+ * the sale already earned that once. The sale's commission goes up by exactly
+ * this, so nothing it earned before changes.
+ */
+export function commissionForAddedLines({ services, addOnLines, worker, commissionSettings }) {
+  const { commission, serviceCommissions, perOrder } = calculateCommission({
+    services,
+    addOnLines,
+    worker,
+    commissionSettings,
+  });
+
+  return {
+    commission: centavos(commission - perOrder),
+    serviceCommissions,
   };
 }

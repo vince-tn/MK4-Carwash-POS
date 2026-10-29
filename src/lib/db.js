@@ -20,9 +20,12 @@ const ORDER_SELECT = `
   photo_name, photo_path, notes, created_at, archived_at, archived_by,
   restored_at, restored_by, payment_updated_by,
   order_services (
-    id, category, size, price, commission_type, commission_rate, commission
+    id, category, size, price, commission_type, commission_rate, commission,
+    created_at, added_by
   ),
-  order_addons ( id, name, price, commission_rate, commission, details ),
+  order_addons (
+    id, name, price, commission_rate, commission, details, created_at, added_by
+  ),
   order_payments (
     id, method, amount, reference, proof_path, proof_name, note, paid_at,
     recorded_by, removed_at, removed_by
@@ -72,6 +75,7 @@ function toAppOrder(row) {
       commissionType: service.commission_type || "",
       commissionRate: num(service.commission_rate),
       commission: numOrNull(service.commission),
+      ...addedLater(service),
     })),
     selectedAddOns: (row.order_addons || []).map((addOn) => addOn.name),
     addOnLines: (row.order_addons || []).map((addOn) => ({
@@ -81,6 +85,7 @@ function toAppOrder(row) {
       commissionRate: numOrNull(addOn.commission_rate),
       commission: numOrNull(addOn.commission),
       details: addOn.details || "",
+      ...addedLater(addOn),
     })),
     paymentEnabled: row.payment_enabled || { ...EMPTY_PAYMENT_ENABLED },
     cash: row.cash ?? "",
@@ -116,6 +121,15 @@ function toAppOrder(row) {
       String(a.paidAt).localeCompare(String(b.paidAt))
     ),
   };
+}
+
+// A service or add-on added to the sale after it was recorded (supabase/24)
+// carries who added it and when. Lines recorded with the sale have no
+// added_by, and get neither.
+function addedLater(line) {
+  return line.added_by
+    ? { addedBy: line.added_by, addedAt: line.created_at }
+    : { addedBy: "", addedAt: null };
 }
 
 function toAppPayment(row) {
@@ -160,6 +174,38 @@ export async function addOrderPayment(orderDbId, payment) {
     proof_path: payment.proofPath || null,
     proof_name: payment.proofName || null,
     note: payment.note?.trim() || null,
+  });
+
+  if (error) throw error;
+  return fetchOrderById(orderDbId);
+}
+
+/*
+ * Services and add-ons added to a sale after it was recorded (supabase/24).
+ * One call: the database adds the lines and raises the sale's totals and
+ * commission by exactly what was added, or does nothing at all. Each line
+ * carries the commission the app worked out (lib/commission
+ * commissionForAddedLines). The sale is read back so the screen shows what
+ * was stored.
+ */
+export async function addToSale(orderDbId, { services = [], addOnLines = [] }) {
+  const { error } = await supabase.rpc("add_to_sale", {
+    p_order_id: orderDbId,
+    p_services: services.map((service) => ({
+      category: service.category,
+      size: service.size || "",
+      price: num(service.price),
+      commission_type: service.commissionType || null,
+      commission_rate: num(service.commissionRate),
+      commission: num(service.commission),
+    })),
+    p_addons: addOnLines.map((line) => ({
+      name: line.name,
+      price: num(line.price),
+      commission_rate: num(line.commissionRate),
+      commission: num(line.commission),
+      details: line.details?.trim() || null,
+    })),
   });
 
   if (error) throw error;
