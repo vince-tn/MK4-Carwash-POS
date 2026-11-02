@@ -1100,11 +1100,10 @@ export default function SalesRecords({
     ];
 
     const rows = filteredAndSortedOrders.map((order) => {
+      // Package and size only, as the add-ons are named without a price
+      // (client request, 2026-11-02). The amount is in Service Total.
       const services = order.services
-        ?.map(
-          (service) =>
-            `${service.category} - ${service.size} - ${service.price}`
-        )
+        ?.map((service) => `${service.category} - ${service.size}`)
         .join(" | ");
 
       return [
