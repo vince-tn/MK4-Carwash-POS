@@ -155,6 +155,9 @@ export default function App() {
   const [authChecked, setAuthChecked] = useState(false);
   const [orders, setOrders] = useState([]);
   const [workers, setWorkers] = useState([]);
+  // Every active worker, for choosing who helped on a car. A worker login's
+  // own list holds only the workers on that login.
+  const [helpers, setHelpers] = useState([]);
   const [commissionSettings, setCommissionSettings] = useState(
     defaultCommissionSettings
   );
@@ -227,6 +230,7 @@ export default function App() {
           nextPricing,
           nextOrders,
           nextArchived,
+          nextHelpers,
         ] = await Promise.all([
             can.loadWorkers === "mine"
               ? db.fetchMyEmployees()
@@ -241,12 +245,14 @@ export default function App() {
             // Archived sales are out of every total; they are only loaded so
             // the Archived view can show them and put one back.
             can.loadOrders ? db.fetchArchivedOrders() : [],
+            can.loadWorkers === "mine" ? db.fetchActiveWorkers() : null,
           ]);
 
         setAccessState({ key: sessionKey, access: nextAccess });
         setOrders(nextOrders);
         setArchivedOrders(nextArchived);
         setWorkers(nextWorkers);
+        setHelpers(nextHelpers || []);
         setCommissionSettings(nextCommission);
         setPricing(nextPricing);
         storedCommission.current = nextCommission;
@@ -281,6 +287,12 @@ export default function App() {
   // Five buttons fit across a 375px phone; six cut their labels off.
   const barItems =
     navItems.length > 5 ? navItems.filter((item) => !item.spare) : navItems;
+
+  // Who can be credited on a car: an admin's or secretary's own employee
+  // list, or for a worker login every active worker (db.fetchActiveWorkers).
+  const activeWorkers = (can.loadWorkers === "mine" ? helpers : workers).filter(
+    (worker) => worker.status === "Active" && isSalesWorker(worker)
+  );
 
   useEffect(() => {
     if (!menuOpen) return undefined;
@@ -624,12 +636,17 @@ export default function App() {
 
         // The database cleared worker_id on their sales; mirror that here so
         // the Employees totals stop counting them without a reload.
+        // Their credits on sales they helped with are unlinked too (25).
         const unlink = (list) =>
-          list.map((order) =>
-            order.workerId === pendingDelete.id
-              ? { ...order, workerId: "" }
-              : order
-          );
+          list.map((order) => {
+            const credits = (order.credits || []).map((credit) =>
+              credit.workerId === pendingDelete.id ? { ...credit, workerId: "" } : credit
+            );
+
+            return order.workerId === pendingDelete.id
+              ? { ...order, workerId: "", credits }
+              : { ...order, credits };
+          });
 
         setOrders(unlink);
         setArchivedOrders(unlink);
@@ -676,6 +693,7 @@ export default function App() {
     setOrders([]);
     setArchivedOrders([]);
     setWorkers([]);
+    setHelpers([]);
     setDataState("idle");
     setImportOffer(false);
     // Forces the effect to re-run and reload the public half of the data.
@@ -951,6 +969,7 @@ export default function App() {
                 // A secretary's list holds every employee; the form offers
                 // only workers. A worker login's list is workers already.
                 workers={workers.filter(isSalesWorker)}
+                helpers={activeWorkers}
                 chooseWorkerLabel={
                   access?.role === "secretary"
                     ? "Select the worker"
@@ -975,6 +994,7 @@ export default function App() {
                 onAddPayment={addOrderPayment}
                 onRemovePayment={removeOrderPayment}
                 onAddToSale={addToSale}
+                helpers={activeWorkers}
                 pricingData={pricing.categories}
                 addOns={pricing.addOns}
                 commissionSettings={commissionSettings}

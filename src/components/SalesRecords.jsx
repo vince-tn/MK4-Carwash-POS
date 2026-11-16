@@ -12,6 +12,7 @@ import { laterPaid, laterPayments, summarise } from "../lib/totals";
 import { isSalesWorker } from "../lib/access";
 import LaterPayments from "./LaterPayments";
 import AddToSale from "./AddToSale";
+import { workedOn, workerNames, workerParts } from "../lib/credits";
 
 const METHOD_LABEL = { cash: "Cash", gcash: "GCash", credit: "Credit", bank: "Bank" };
 
@@ -87,7 +88,8 @@ function addOnLinesOf(order) {
 }
 
 function addOnLabel(line) {
-  return line.details ? `${line.name}: ${line.details}` : line.name;
+  const name = line.qty > 1 ? `${line.qty} x ${line.name}` : line.name;
+  return line.details ? `${name}: ${line.details}` : name;
 }
 
 /*
@@ -204,6 +206,19 @@ function sortOrders(orders, sortBy) {
   return sorted;
 }
 
+// Each worker's commission on a sale, with the steps they did, when more
+// than one worker shared it (supabase/25).
+function commissionByWorker(order) {
+  const parts = workerParts(order);
+  if (parts.length < 2) return [];
+
+  return parts.map((part) => ({
+    key: part.key,
+    label: part.processes.length ? `${part.name} (${part.processes.join(", ")})` : part.name,
+    amount: part.commission,
+  }));
+}
+
 function PaymentEditModal({
   order,
   onClose,
@@ -212,6 +227,7 @@ function PaymentEditModal({
   onRemovePayment,
   onAddToSale,
   workers,
+  helpers,
   pricingData,
   addOns,
   commissionSettings,
@@ -339,6 +355,7 @@ function PaymentEditModal({
         <AddToSale
           order={order}
           workers={workers}
+          helpers={helpers}
           pricingData={pricingData}
           addOns={addOns}
           commissionSettings={commissionSettings}
@@ -514,6 +531,7 @@ export default function SalesRecords({
   onAddPayment,
   onRemovePayment,
   onAddToSale,
+  helpers = [],
   pricingData = [],
   addOns = [],
   commissionSettings,
@@ -602,7 +620,7 @@ export default function SalesRecords({
         [
           order.id?.toLowerCase(),
           order.plateNumber?.toLowerCase(),
-          order.washerName?.toLowerCase(),
+          workerNames(order).toLowerCase(),
           order.date?.toLowerCase(),
           order.referenceNo?.toLowerCase(),
           order.gcashRef?.toLowerCase(),
@@ -636,9 +654,11 @@ export default function SalesRecords({
 
       const matchesDateTo = !filters.dateTo || order.date <= filters.dateTo;
 
+      // Every sale the worker did anything on, not only the ones recorded
+      // under them.
       const matchesWorker =
         filters.workerIds.length === 0 ||
-        filters.workerIds.includes(order.workerId);
+        filters.workerIds.some((workerId) => workedOn(order, workerId));
 
       const orderPaymentMethods = getPaymentMethods(order);
 
@@ -750,7 +770,7 @@ export default function SalesRecords({
               <strong>{order.plateNumber}</strong>
             </td>
 
-            <td>{order.washerName}</td>
+            <td>{workerNames(order)}</td>
 
             <td>
               {order.services?.map((service) => (
@@ -940,6 +960,20 @@ export default function SalesRecords({
                             </dd>
                           </Fragment>
                         ))}
+                        {commissionByWorker(order).length > 0 && (
+                          <>
+                            <dt>By worker</dt>
+                            <dd />
+                            {commissionByWorker(order).map((line) => (
+                              <Fragment key={line.key}>
+                                <dt className="commission-line">{line.label}</dt>
+                                <dd className="commission-line">
+                                  {peso.format(line.amount)}
+                                </dd>
+                              </Fragment>
+                            ))}
+                          </>
+                        )}
                       </dl>
                     </div>
 
@@ -1071,7 +1105,7 @@ export default function SalesRecords({
       "Customer Name",
       "Contact Number",
       "Car Type",
-      "Worker",
+      "Workers",
       "Staff on Duty",
       "Services",
       "Add-ons",
@@ -1087,6 +1121,7 @@ export default function SalesRecords({
       "Balance",
       "Commission",
       "Commission Rule",
+      "Commission by Worker",
       "GCash Reference",
       "Credit Reference",
       "Bank Reference",
@@ -1113,7 +1148,7 @@ export default function SalesRecords({
         order.customerName,
         order.contactNumber,
         order.carType,
-        order.washerName,
+        workerNames(order),
         order.manager,
         services,
         addOnLinesOf(order).map(addOnLabel).join(" | "),
@@ -1129,6 +1164,9 @@ export default function SalesRecords({
         order.balance,
         order.commission,
         order.commissionLabel,
+        workerParts(order)
+          .map((part) => `${part.name} ${part.commission.toFixed(2)}`)
+          .join(" | "),
         order.gcashRef || order.referenceNo,
         order.creditRef,
         order.bankRef,
@@ -1392,6 +1430,7 @@ export default function SalesRecords({
           onRemovePayment={onRemovePayment}
           onAddToSale={onAddToSale}
           workers={workers}
+          helpers={helpers}
           pricingData={pricingData}
           addOns={addOns}
           commissionSettings={commissionSettings}

@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { localDateString } from "../lib/reportUtils";
-import { calculateCommission, centavos } from "../lib/commission";
+import { addOnLineFor, assignmentsFor, creditSale } from "../lib/commission";
+import { DoneBy, QtyStepper, WorkerPick } from "./WhoDidIt";
 
 const peso = new Intl.NumberFormat("en-PH", {
   style: "currency",
@@ -19,12 +20,17 @@ function createBlankService(pricingData) {
     price: firstItem?.price || 0,
     commissionType: firstCategory?.commissionType || "",
     commissionRate: firstCategory?.commissionRate || 0,
+    // Who did it (components/WhoDidIt): "" is the car's own worker.
+    doneBy: [""],
+    steps: {},
   };
 }
 
 export default function WorkerForm({
   onAddOrder,
   workers,
+  // Every active worker, for choosing who helped (supabase/25).
+  helpers = [],
   chooseWorkerLabel = "Select your name",
   commissionSettings,
   pricingData,
@@ -48,6 +54,8 @@ export default function WorkerForm({
     manager: "",
     services: [createBlankService(pricingData)],
     selectedAddOns: [],
+    // Per chosen add-on: how many, and who did it ("" = the car's worker).
+    addOnChoices: {},
     laborDetails: "",
     laborAmount: "",
     paymentEnabled: {
@@ -74,6 +82,14 @@ export default function WorkerForm({
   const [proofStatus, setProofStatus] = useState("");
 
   const selectedWorker = workers.find((worker) => worker.id === form.workerId);
+
+  // Everyone who can be credited, with their commission rules. A worker
+  // login's own list is the authority for its workers.
+  const workersById = useMemo(
+    () => new Map([...helpers, ...workers].map((worker) => [worker.id, worker])),
+    [helpers, workers]
+  );
+  const pickable = helpers.length ? helpers : activeWorkers;
 
   // Payment proofs are phone photos or screenshots, typically 2-5 MB raw.
   // They are re-encoded as JPEG of at most 50 KB, about six times smaller
@@ -136,41 +152,66 @@ export default function WorkerForm({
     .find((addOn) => addOn?.workerSetsPrice);
 
   // Each chosen add-on as it will be charged: Labor at the worker's amount,
-  // everything else at the price list's.
+  // everything else at the price list's, times how many.
   const addOnLines = useMemo(() => {
-    return form.selectedAddOns.map((name) => {
-      const addOn = addOns.find((item) => item.name === name);
-      const isLabor = Boolean(addOn?.workerSetsPrice);
-      const price = isLabor
-        ? Number(form.laborAmount) || 0
-        : Number(addOn?.price) || 0;
-      const commissionRate = Number(addOn?.commissionRate) || 0;
-
-      return {
-        name,
-        price,
-        commissionRate,
-        commission: centavos(price * (commissionRate / 100)),
-        details: isLabor ? form.laborDetails.trim() : "",
-      };
-    });
-  }, [form.selectedAddOns, form.laborAmount, form.laborDetails, addOns]);
+    return form.selectedAddOns.map((name) =>
+      addOnLineFor(
+        addOns.find((item) => item.name === name) || { name },
+        {
+          ...form.addOnChoices[name],
+          laborAmount: form.laborAmount,
+          laborDetails: form.laborDetails,
+        },
+        form.workerId
+      )
+    );
+  }, [form.selectedAddOns, form.addOnChoices, form.laborAmount, form.laborDetails, form.workerId, addOns]);
 
   const addOnTotal = addOnLines.reduce((sum, line) => sum + line.price, 0);
 
   const discount = form.paymentEnabled.discount ? Number(form.discount) || 0 : 0;
   const total = Math.max(serviceTotal + addOnTotal - discount, 0);
 
+  // Each worker earns their part under their own rule (lib/commission).
   const commissionResult = useMemo(() => {
-    return calculateCommission({
-      services: form.services,
+    return creditSale({
+      services: form.services.map((service) => ({
+        ...service,
+        assignments: assignmentsFor(
+          service,
+          pricingData.find((item) => item.category === service.category),
+          form.workerId
+        ),
+      })),
       addOnLines,
-      worker: selectedWorker,
+      workersById,
       commissionSettings,
     });
-  }, [form.services, addOnLines, selectedWorker, commissionSettings]);
+  }, [form.services, form.workerId, addOnLines, workersById, commissionSettings, pricingData]);
 
   const commission = commissionResult.commission;
+
+  // Each worker's commission on this car, the car's worker first.
+  const split = useMemo(() => {
+    const byWorker = new Map();
+    const credits = [
+      ...commissionResult.services.flatMap((service) => service.credits),
+      ...commissionResult.addOnLines.flatMap((line) => line.credits),
+      ...commissionResult.saleCredits,
+    ];
+
+    for (const credit of credits) {
+      byWorker.set(credit.workerId, (byWorker.get(credit.workerId) || 0) + credit.commission);
+    }
+
+    return [...byWorker.entries()]
+      .map(([workerId, amount]) => ({
+        workerId,
+        name: workersById.get(workerId)?.name || "—",
+        amount,
+      }))
+      .sort((a, b) => (b.workerId === form.workerId) - (a.workerId === form.workerId) || b.amount - a.amount);
+  }, [commissionResult, workersById, form.workerId]);
 
   const totalPaid =
     (form.paymentEnabled.cash ? Number(form.cash) || 0 : 0) +
@@ -244,6 +285,8 @@ export default function WorkerForm({
             price: firstItem?.price || 0,
             commissionType: categoryData.commissionType,
             commissionRate: categoryData.commissionRate,
+            // Another service's steps mean nothing here.
+            steps: {},
           };
         }
 
@@ -275,6 +318,26 @@ export default function WorkerForm({
     });
   }
 
+  // Who did a service, from the Done by picker.
+  function updateServiceWorkers(id, patch) {
+    setForm((prev) => ({
+      ...prev,
+      services: prev.services.map((service) =>
+        service.id === id ? { ...service, ...patch } : service
+      ),
+    }));
+  }
+
+  function updateAddOnChoice(name, patch) {
+    setForm((prev) => ({
+      ...prev,
+      addOnChoices: {
+        ...prev.addOnChoices,
+        [name]: { ...prev.addOnChoices[name], ...patch },
+      },
+    }));
+  }
+
   function toggleAddOn(name) {
     const addOn = addOns.find((item) => item.name === name);
 
@@ -282,9 +345,13 @@ export default function WorkerForm({
       const exists = prev.selectedAddOns.includes(name);
 
       if (exists) {
+        const addOnChoices = { ...prev.addOnChoices };
+        delete addOnChoices[name];
+
         return {
           ...prev,
           selectedAddOns: prev.selectedAddOns.filter((item) => item !== name),
+          addOnChoices,
           ...(addOn?.workerSetsPrice ? { laborDetails: "", laborAmount: "" } : {}),
         };
       }
@@ -314,6 +381,7 @@ export default function WorkerForm({
       manager: "",
       services: [createBlankService(pricingData)],
       selectedAddOns: [],
+      addOnChoices: {},
       laborDetails: "",
       laborAmount: "",
       paymentEnabled: {
@@ -404,12 +472,10 @@ export default function WorkerForm({
     // No id here: the database assigns the sales order number on save.
     const order = {
       ...form,
-      // Each line's commission is stored, for the breakdown in Sales Records.
-      services: form.services.map((service, index) => ({
-        ...service,
-        commission: commissionResult.serviceCommissions[index],
-      })),
-      addOnLines,
+      // Each line with its commission and who earns it (supabase/25).
+      services: commissionResult.services,
+      addOnLines: commissionResult.addOnLines,
+      saleCredits: commissionResult.saleCredits,
       photoPath,
       washerName: selectedWorker?.name || "Unknown Worker",
       serviceTotal,
@@ -627,6 +693,15 @@ export default function WorkerForm({
                       />
                     </label>
                   </div>
+
+                  <DoneBy
+                    service={service}
+                    processes={selectedCategory?.processes || []}
+                    helpers={pickable}
+                    leadId={form.workerId}
+                    leadName={selectedWorker?.name}
+                    onChange={(patch) => updateServiceWorkers(service.id, patch)}
+                  />
                 </div>
               );
             })}
@@ -659,6 +734,38 @@ export default function WorkerForm({
                 );
               })}
             </div>
+
+            {addOnLines.length > 0 && (
+              <ul className="addon-lines">
+                {addOnLines.map((line) => {
+                  const addOn = addOns.find((item) => item.name === line.name);
+
+                  return (
+                    <li key={line.name}>
+                      <strong>{line.name}</strong>
+                      {addOn?.workerSetsPrice ? (
+                        <span className="field-hint">Once</span>
+                      ) : (
+                        <QtyStepper
+                          value={line.qty}
+                          onChange={(qty) => updateAddOnChoice(line.name, { qty })}
+                          label={`How many ${line.name}`}
+                        />
+                      )}
+                      <WorkerPick
+                        value={form.addOnChoices[line.name]?.workerId}
+                        onChange={(workerId) => updateAddOnChoice(line.name, { workerId })}
+                        helpers={pickable}
+                        leadId={form.workerId}
+                        leadName={selectedWorker?.name}
+                        label={`${line.name} done by`}
+                      />
+                      <span className="addon-line-amount">{peso.format(line.price)}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
 
             {laborAddOn && (
               <div className="form-grid labor-fields">
@@ -921,6 +1028,20 @@ export default function WorkerForm({
           <strong>{peso.format(addOnTotal)}</strong>
         </div>
 
+        {addOnLines.length > 0 && (
+          <div className="receipt-service-list">
+            {addOnLines.map((line) => (
+              <div key={line.name}>
+                <span>
+                  {line.qty > 1 ? `${line.qty} x ` : ""}
+                  {line.name}
+                </span>
+                <strong>{peso.format(line.price)}</strong>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="receipt-row">
           <span>Discount</span>
           <strong>{peso.format(discount)}</strong>
@@ -940,6 +1061,17 @@ export default function WorkerForm({
           <span>Commission Rule</span>
           <strong>{commissionResult.label}</strong>
         </div>
+
+        {split.length > 1 && (
+          <div className="receipt-service-list">
+            {split.map((part) => (
+              <div key={part.workerId}>
+                <span>{part.name}</span>
+                <strong>{peso.format(part.amount)}</strong>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="receipt-total">
           <span>Total</span>

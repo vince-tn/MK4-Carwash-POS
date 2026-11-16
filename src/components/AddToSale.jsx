@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { centavos, commissionForAddedLines } from "../lib/commission";
+import { addOnLineFor, assignmentsFor, creditSale } from "../lib/commission";
+import { DoneBy, QtyStepper, WorkerPick } from "./WhoDidIt";
 
 /*
  * Services and add-ons, inside a sale's Edit window in Sales Records.
@@ -11,9 +12,11 @@ import { centavos, commissionForAddedLines } from "../lib/commission";
  * (supabase/24): the sale's totals and commission go up by exactly what was
  * added, and Paid and Balance follow. Nothing is removed from a sale here.
  *
- * The added lines earn commission under the sale's worker's rule as it is
- * now (lib/commission commissionForAddedLines); a flat per-order amount is
- * never paid twice.
+ * Each added line says who did it, the sale's own worker unless another is
+ * chosen (supabase/25), and earns them commission under their rule as it is
+ * now (lib/commission creditSale). A flat per-order amount is paid once per
+ * worker per sale: never again to the sale's own worker, and to a helper
+ * only if they had not earned it on this sale already.
  */
 
 const peso = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" });
@@ -33,6 +36,8 @@ function blankService(pricingData) {
     price: firstItem?.price || 0,
     commissionType: firstCategory?.commissionType || "",
     commissionRate: firstCategory?.commissionRate || 0,
+    doneBy: [""],
+    steps: {},
   };
 }
 
@@ -43,6 +48,8 @@ function addedNote(line) {
 export default function AddToSale({
   order,
   workers = [],
+  // Every active worker, for choosing who did what (supabase/25).
+  helpers = [],
   pricingData = [],
   addOns = [],
   commissionSettings,
@@ -50,13 +57,32 @@ export default function AddToSale({
 }) {
   const [services, setServices] = useState([]);
   const [selectedAddOns, setSelectedAddOns] = useState([]);
+  // Per chosen add-on: how many, and who did it ("" = the sale's worker).
+  const [addOnChoices, setAddOnChoices] = useState({});
   const [laborDetails, setLaborDetails] = useState("");
   const [laborAmount, setLaborAmount] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // The sale's worker decides the commission rule. A worker who has since
-  // been deleted falls back to the shop's global rule.
-  const worker = workers.find((item) => item.id === order.workerId);
+  // The sale's worker gets whatever nobody else is chosen for. One who has
+  // since been deleted earns nothing on it: choose who did it instead.
+  const leadId = order.workerId || "";
+  const workersById = useMemo(
+    () => new Map([...workers, ...helpers].map((item) => [item.id, item])),
+    [workers, helpers]
+  );
+  const leadName = workersById.get(leadId)?.name || order.washerName || "";
+
+  // Workers who already earned a flat per-order amount on this sale, and
+  // the sale's own worker, who earned theirs with it.
+  const alreadyFlat = useMemo(
+    () => [
+      leadId,
+      ...(order.credits || [])
+        .filter((credit) => credit.kind === "sale" && credit.workerId)
+        .map((credit) => credit.workerId),
+    ],
+    [leadId, order.credits]
+  );
 
   const laborAddOn = selectedAddOns
     .map((name) => addOns.find((item) => item.name === name))
@@ -64,32 +90,33 @@ export default function AddToSale({
 
   const addOnLines = useMemo(
     () =>
-      selectedAddOns.map((name) => {
-        const addOn = addOns.find((item) => item.name === name);
-        const isLabor = Boolean(addOn?.workerSetsPrice);
-        const price = isLabor ? Number(laborAmount) || 0 : Number(addOn?.price) || 0;
-        const commissionRate = Number(addOn?.commissionRate) || 0;
-
-        return {
-          name,
-          price,
-          commissionRate,
-          commission: centavos(price * (commissionRate / 100)),
-          details: isLabor ? laborDetails.trim() : "",
-        };
-      }),
-    [selectedAddOns, laborAmount, laborDetails, addOns]
+      selectedAddOns.map((name) =>
+        addOnLineFor(
+          addOns.find((item) => item.name === name) || { name },
+          { ...addOnChoices[name], laborAmount, laborDetails },
+          leadId
+        )
+      ),
+    [selectedAddOns, addOnChoices, laborAmount, laborDetails, addOns, leadId]
   );
 
   const added = useMemo(
     () =>
-      commissionForAddedLines({
-        services,
+      creditSale({
+        services: services.map((service) => ({
+          ...service,
+          assignments: assignmentsFor(
+            service,
+            pricingData.find((item) => item.category === service.category),
+            leadId
+          ),
+        })),
         addOnLines,
-        worker,
+        workersById,
         commissionSettings: commissionSettings || {},
+        alreadyFlat,
       }),
-    [services, addOnLines, worker, commissionSettings]
+    [services, addOnLines, workersById, commissionSettings, alreadyFlat, pricingData, leadId]
   );
 
   const addedAmount =
@@ -131,6 +158,7 @@ export default function AddToSale({
             price: firstItem?.price || 0,
             commissionType: categoryData.commissionType,
             commissionRate: categoryData.commissionRate,
+            steps: {},
           };
         }
 
@@ -142,11 +170,26 @@ export default function AddToSale({
     );
   }
 
+  function updateServiceWorkers(id, patch) {
+    setServices((prev) =>
+      prev.map((service) => (service.id === id ? { ...service, ...patch } : service))
+    );
+  }
+
+  function updateAddOnChoice(name, patch) {
+    setAddOnChoices((prev) => ({ ...prev, [name]: { ...prev[name], ...patch } }));
+  }
+
   function toggleAddOn(name) {
     const addOn = addOns.find((item) => item.name === name);
 
     if (selectedAddOns.includes(name)) {
       setSelectedAddOns((prev) => prev.filter((item) => item !== name));
+      setAddOnChoices((prev) => {
+        const next = { ...prev };
+        delete next[name];
+        return next;
+      });
       if (addOn?.workerSetsPrice) {
         setLaborDetails("");
         setLaborAmount("");
@@ -161,6 +204,7 @@ export default function AddToSale({
   function reset() {
     setServices([]);
     setSelectedAddOns([]);
+    setAddOnChoices({});
     setLaborDetails("");
     setLaborAmount("");
   }
@@ -183,7 +227,10 @@ export default function AddToSale({
 
     const names = [
       ...services.map((service) => `${service.category} - ${service.size} (${peso.format(service.price)})`),
-      ...addOnLines.map((line) => `${line.name}${line.details ? `: ${line.details}` : ""} (${peso.format(line.price)})`),
+      ...addOnLines.map(
+        (line) =>
+          `${line.qty > 1 ? `${line.qty} x ` : ""}${line.name}${line.details ? `: ${line.details}` : ""} (${peso.format(line.price)})`
+      ),
     ];
 
     const confirmed = confirm(
@@ -198,11 +245,9 @@ export default function AddToSale({
 
     try {
       await onAdd(order.id, {
-        services: services.map((service, index) => ({
-          ...service,
-          commission: added.serviceCommissions[index],
-        })),
-        addOnLines,
+        services: added.services,
+        addOnLines: added.addOnLines,
+        saleCredits: added.saleCredits,
       });
       reset();
     } catch (error) {
@@ -222,7 +267,7 @@ export default function AddToSale({
     })),
     ...(order.addOnLines || []).map((line, index) => ({
       key: `addon-${line.id || index}`,
-      label: `${line.details ? `${line.name}: ${line.details}` : line.name} (add-on)`,
+      label: `${line.qty > 1 ? `${line.qty} x ` : ""}${line.details ? `${line.name}: ${line.details}` : line.name} (add-on)`,
       price: line.price,
       note: addedNote(line),
     })),
@@ -314,9 +359,19 @@ export default function AddToSale({
 
                       <label>
                         Commission
-                        <input value={peso.format(added.serviceCommissions[index] || 0)} disabled />
+                        <input value={peso.format(added.services[index]?.commission || 0)} disabled />
                       </label>
                     </div>
+
+                    <DoneBy
+                      service={service}
+                      processes={selectedCategory?.processes || []}
+                      helpers={helpers}
+                      leadId={leadId}
+                      leadName={leadName}
+                      onChange={(patch) => updateServiceWorkers(service.id, patch)}
+                      disabled={busy}
+                    />
                   </div>
                 );
               })}
@@ -357,6 +412,40 @@ export default function AddToSale({
                   );
                 })}
               </div>
+
+              {addOnLines.length > 0 && (
+                <ul className="addon-lines">
+                  {addOnLines.map((line) => {
+                    const addOn = addOns.find((item) => item.name === line.name);
+
+                    return (
+                      <li key={line.name}>
+                        <strong>{line.name}</strong>
+                        {addOn?.workerSetsPrice ? (
+                          <span className="field-hint">Once</span>
+                        ) : (
+                          <QtyStepper
+                            value={line.qty}
+                            onChange={(qty) => updateAddOnChoice(line.name, { qty })}
+                            disabled={busy}
+                            label={`How many ${line.name}`}
+                          />
+                        )}
+                        <WorkerPick
+                          value={addOnChoices[line.name]?.workerId}
+                          onChange={(workerId) => updateAddOnChoice(line.name, { workerId })}
+                          helpers={helpers}
+                          leadId={leadId}
+                          leadName={leadName}
+                          disabled={busy}
+                          label={`${line.name} done by`}
+                        />
+                        <span className="addon-line-amount">{peso.format(line.price)}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
 
               {laborAddOn && (
                 <div className="form-grid labor-fields later-payment-form">

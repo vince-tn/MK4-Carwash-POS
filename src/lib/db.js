@@ -24,7 +24,12 @@ const ORDER_SELECT = `
     created_at, added_by
   ),
   order_addons (
-    id, name, price, commission_rate, commission, details, created_at, added_by
+    id, name, qty, unit_price, price, commission_rate, commission, details,
+    created_at, added_by
+  ),
+  order_credits (
+    id, kind, order_service_id, order_addon_id, worker_id, worker_name,
+    process, share, sales_amount, commission, rule_label, added_by
   ),
   order_payments (
     id, method, amount, reference, proof_path, proof_name, note, paid_at,
@@ -81,12 +86,16 @@ function toAppOrder(row) {
     addOnLines: (row.order_addons || []).map((addOn) => ({
       id: addOn.id,
       name: addOn.name,
+      qty: Number(addOn.qty) || 1,
+      unitPrice: num(addOn.unit_price ?? addOn.price),
       price: num(addOn.price),
       commissionRate: numOrNull(addOn.commission_rate),
       commission: numOrNull(addOn.commission),
       details: addOn.details || "",
       ...addedLater(addOn),
     })),
+    // Who earned what (supabase/25). lib/credits reads these.
+    credits: (row.order_credits || []).map(toAppCredit),
     paymentEnabled: row.payment_enabled || { ...EMPTY_PAYMENT_ENABLED },
     cash: row.cash ?? "",
     gcash: row.gcash ?? "",
@@ -130,6 +139,43 @@ function addedLater(line) {
   return line.added_by
     ? { addedBy: line.added_by, addedAt: line.created_at }
     : { addedBy: "", addedAt: null };
+}
+
+function toAppCredit(row) {
+  return {
+    id: row.id,
+    kind: row.kind,
+    serviceId: row.order_service_id || "",
+    addOnId: row.order_addon_id || "",
+    workerId: row.worker_id || "",
+    workerName: row.worker_name || "Unknown",
+    process: row.process || "",
+    share: num(row.share),
+    salesAmount: num(row.sales_amount),
+    commission: num(row.commission),
+    ruleLabel: row.rule_label || "",
+    addedBy: row.added_by || "",
+  };
+}
+
+// A line's credits as create_order and add_to_sale take them (supabase/25).
+function toCreditRows(credits) {
+  return (credits || []).map((credit) => ({
+    worker_id: credit.workerId,
+    process: credit.process || null,
+    share: Number(credit.share) || 0,
+    sales_amount: num(credit.salesAmount),
+    commission: num(credit.commission),
+    rule_label: credit.ruleLabel || null,
+  }));
+}
+
+function toSaleCreditRows(saleCredits) {
+  return (saleCredits || []).map((credit) => ({
+    worker_id: credit.workerId,
+    commission: num(credit.commission),
+    rule_label: credit.ruleLabel || null,
+  }));
 }
 
 function toAppPayment(row) {
@@ -185,10 +231,10 @@ export async function addOrderPayment(orderDbId, payment) {
  * One call: the database adds the lines and raises the sale's totals and
  * commission by exactly what was added, or does nothing at all. Each line
  * carries the commission the app worked out (lib/commission
- * commissionForAddedLines). The sale is read back so the screen shows what
- * was stored.
+ * creditSale), with who earns it (supabase/25). The sale is read back so the
+ * screen shows what was stored.
  */
-export async function addToSale(orderDbId, { services = [], addOnLines = [] }) {
+export async function addToSale(orderDbId, { services = [], addOnLines = [], saleCredits = [] }) {
   const { error } = await supabase.rpc("add_to_sale", {
     p_order_id: orderDbId,
     p_services: services.map((service) => ({
@@ -198,14 +244,19 @@ export async function addToSale(orderDbId, { services = [], addOnLines = [] }) {
       commission_type: service.commissionType || null,
       commission_rate: num(service.commissionRate),
       commission: num(service.commission),
+      credits: toCreditRows(service.credits),
     })),
     p_addons: addOnLines.map((line) => ({
       name: line.name,
+      qty: Number(line.qty) || 1,
+      unit_price: num(line.unitPrice ?? line.price),
       price: num(line.price),
       commission_rate: num(line.commissionRate),
       commission: num(line.commission),
       details: line.details?.trim() || null,
+      credits: toCreditRows(line.credits),
     })),
+    p_sale_credits: toSaleCreditRows(saleCredits),
   });
 
   if (error) throw error;
@@ -323,6 +374,7 @@ function toServiceRows(order) {
       commission_type: service.commissionType || null,
       commission_rate: num(service.commissionRate),
       commission: numOrNull(service.commission),
+      ...(service.credits ? { credits: toCreditRows(service.credits) } : {}),
     }));
 }
 
@@ -336,10 +388,12 @@ function toAddOnRows(order) {
   if (order.addOnLines) {
     return order.addOnLines.map((line) => ({
       name: line.name,
+      ...(line.qty ? { qty: Number(line.qty) || 1, unit_price: num(line.unitPrice) } : {}),
       price: num(line.price),
       commission_rate: numOrNull(line.commissionRate),
       commission: numOrNull(line.commission),
       details: line.details || null,
+      ...(line.credits ? { credits: toCreditRows(line.credits) } : {}),
     }));
   }
 
@@ -361,6 +415,9 @@ export async function createOrder(order) {
       ...toOrderRow(order),
       services: toServiceRows(order),
       addons: toAddOnRows(order),
+      // Always sent by this version, even empty: it tells create_order the
+      // credits are complete (supabase/25).
+      sale_credits: toSaleCreditRows(order.saleCredits),
     },
   });
 
@@ -556,6 +613,17 @@ export async function fetchMyEmployees() {
   return (data || []).map(toAppWorker);
 }
 
+/*
+ * Every active worker, for choosing who helped on a car (supabase/25). A
+ * personal worker login sees only itself through my_employees().
+ */
+export async function fetchActiveWorkers() {
+  const { data, error } = await supabase.rpc("active_workers");
+
+  if (error) throw error;
+  return (data || []).map((row) => toAppWorker({ ...row, role: "Worker", status: "Active" }));
+}
+
 /* ------------------------------------------------------------------ logins */
 
 /*
@@ -745,17 +813,20 @@ export async function saveCommissionSettings(settings) {
 /* ----------------------------------------------------------------- pricing */
 
 export async function fetchPricing() {
-  const [categoriesResult, itemsResult, addOnsResult] = await Promise.all([
+  const [categoriesResult, itemsResult, addOnsResult, processesResult] = await Promise.all([
     supabase.from("service_categories").select("*").order("sort_order"),
     supabase.from("service_items").select("*").order("sort_order"),
     supabase.from("add_ons").select("*").order("sort_order"),
+    supabase.from("service_processes").select("*").order("sort_order"),
   ]);
 
   if (categoriesResult.error) throw categoriesResult.error;
   if (itemsResult.error) throw itemsResult.error;
   if (addOnsResult.error) throw addOnsResult.error;
+  if (processesResult.error) throw processesResult.error;
 
   const items = itemsResult.data || [];
+  const processes = processesResult.data || [];
 
   return {
     categories: (categoriesResult.data || []).map((category) => ({
@@ -769,6 +840,15 @@ export async function fetchPricing() {
           id: item.id,
           size: item.size,
           price: num(item.price),
+        })),
+      // Steps inside the service, each with its share of the commission
+      // (supabase/25). None: whoever does it splits it equally.
+      processes: processes
+        .filter((process) => process.category_id === category.id)
+        .map((process) => ({
+          id: process.id,
+          name: process.name,
+          sharePercent: num(process.share_percent),
         })),
     })),
     addOns: (addOnsResult.data || []).map((addOn) => ({
@@ -794,7 +874,11 @@ export function collectPricingIds(pricing) {
 
   const addOns = (pricing?.addOns || []).map((addOn) => addOn.id);
 
-  return { categories, items, addOns };
+  const processes = (pricing?.categories || []).flatMap((category) =>
+    (category.processes || []).map((process) => process.id)
+  );
+
+  return { categories, items, addOns, processes };
 }
 
 /*
@@ -854,6 +938,21 @@ export async function savePricing(pricing, previous) {
     if (error) throw error;
   }
 
+  const processRows = categories.flatMap((category) =>
+    (category.processes || []).map((process, index) => ({
+      id: process.id,
+      category_id: category.id,
+      name: process.name?.trim() || "Step",
+      share_percent: Math.max(num(process.sharePercent), 0),
+      sort_order: index,
+    }))
+  );
+
+  if (processRows.length) {
+    const { error } = await supabase.from("service_processes").upsert(processRows);
+    if (error) throw error;
+  }
+
   // Nothing to reconcile on a first write: there is no previous list, so
   // there is nothing the user can have removed.
   if (!previous) return;
@@ -862,6 +961,7 @@ export async function savePricing(pricing, previous) {
     deleteRemoved("service_categories", previous.categories, categoryRows),
     deleteRemoved("service_items", previous.items, itemRows),
     deleteRemoved("add_ons", previous.addOns, addOnRows),
+    deleteRemoved("service_processes", previous.processes, processRows),
   ]);
 }
 
