@@ -4,6 +4,7 @@ import {
   ClipboardList,
   Coins,
   Droplets,
+  FileSignature,
   KeyRound,
   LayoutDashboard,
   UsersRound,
@@ -12,6 +13,8 @@ import {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
+  Target,
+  Wallet,
   X,
 } from "lucide-react";
 import logo from "./assets/logo.webp";
@@ -34,6 +37,9 @@ const loadPage = {
   workers: () => import("./components/WorkerManagement"),
   logins: () => import("./components/LoginsManagement"),
   services: () => import("./components/ServicesManagement"),
+  requests: () => import("./components/Requests"),
+  payslips: () => import("./components/Payslips"),
+  quota: () => import("./components/QuotaSettings"),
 };
 
 const WorkerForm = lazy(loadPage.form);
@@ -43,6 +49,9 @@ const CommissionReport = lazy(loadPage.commissions);
 const WorkerManagement = lazy(loadPage.workers);
 const LoginsManagement = lazy(loadPage.logins);
 const ServicesManagement = lazy(loadPage.services);
+const Requests = lazy(loadPage.requests);
+const Payslips = lazy(loadPage.payslips);
+const QuotaSettings = lazy(loadPage.quota);
 
 /*
  * A page's code can fail to download: a dropped connection, or a deploy that
@@ -128,6 +137,11 @@ const NAV = [
   { page: "workers", label: "Employees", short: "Employees", icon: UsersRound },
   { page: "logins", label: "Logins", short: "Logins", icon: KeyRound },
   { page: "services", label: "Services", short: "Services", icon: Droplets },
+  // Phase 2. Spare for admins and secretaries, whose bars are full; a
+  // worker's bar has room for them.
+  { page: "requests", label: "Vale / CM", short: "Vale / CM", icon: FileSignature, spare: true },
+  { page: "payslips", label: "Payslips", short: "Payslip", icon: Wallet, spare: true },
+  { page: "quota", label: "Quota", short: "Quota", icon: Target, spare: true },
   { page: "login", label: "Login", short: "Login", icon: LogIn },
 ];
 
@@ -139,6 +153,9 @@ const PAGE_TITLES = {
   workers: "Employees and Commission",
   logins: "Staff Logins",
   services: "Services and Pricing",
+  requests: "Vale and CM Forms",
+  payslips: "Weekly Payslips",
+  quota: "Daily Quota and Bonus",
   login: "Staff Login",
 };
 
@@ -162,6 +179,8 @@ export default function App() {
     defaultCommissionSettings
   );
   const [pricing, setPricing] = useState(EMPTY_PRICING);
+  // The daily car quota and bonus rules (supabase/26), newest first.
+  const [quotaSettings, setQuotaSettings] = useState([]);
 
   // Who is signed in and what they may open, tagged with the session it was
   // loaded for, so a fresh login never runs on the previous visitor's access.
@@ -231,6 +250,7 @@ export default function App() {
           nextOrders,
           nextArchived,
           nextHelpers,
+          nextQuota,
         ] = await Promise.all([
             can.loadWorkers === "mine"
               ? db.fetchMyEmployees()
@@ -246,6 +266,7 @@ export default function App() {
             // the Archived view can show them and put one back.
             can.loadOrders ? db.fetchArchivedOrders() : [],
             can.loadWorkers === "mine" ? db.fetchActiveWorkers() : null,
+            can.loadQuota ? db.fetchQuotaSettings() : [],
           ]);
 
         setAccessState({ key: sessionKey, access: nextAccess });
@@ -253,6 +274,7 @@ export default function App() {
         setArchivedOrders(nextArchived);
         setWorkers(nextWorkers);
         setHelpers(nextHelpers || []);
+        setQuotaSettings(nextQuota);
         setCommissionSettings(nextCommission);
         setPricing(nextPricing);
         storedCommission.current = nextCommission;
@@ -694,6 +716,7 @@ export default function App() {
     setArchivedOrders([]);
     setWorkers([]);
     setHelpers([]);
+    setQuotaSettings([]);
     setDataState("idle");
     setImportOffer(false);
     // Forces the effect to re-run and reload the public half of the data.
@@ -982,7 +1005,7 @@ export default function App() {
             )}
 
             {currentPage === "dashboard" && (
-              <AdminDashboard orders={orders} workers={workers} />
+              <AdminDashboard orders={orders} workers={workers} quotaSettings={quotaSettings} />
             )}
 
             {currentPage === "records" && (
@@ -1022,6 +1045,35 @@ export default function App() {
                 onUpdateCommissionSettings={setCommissionSettings}
                 rolesOn={Boolean(access?.installed)}
                 manageAdmins={can.manageAdmins}
+              />
+            )}
+
+            {currentPage === "requests" && (
+              <Requests
+                // Who a form can be for: a worker login's own workers, or
+                // every active worker for an admin or secretary.
+                workers={(can.reviewRequests ? activeWorkers : workers).filter(
+                  (worker) => worker.status === "Active" && isSalesWorker(worker)
+                )}
+                canReview={can.reviewRequests}
+                ownLogin={access?.role === "worker" && access?.shared === false}
+              />
+            )}
+
+            {currentPage === "payslips" && (
+              <Payslips
+                orders={orders}
+                workers={workers.filter(isSalesWorker)}
+                quotaSettings={quotaSettings}
+                own={access?.role === "worker"}
+              />
+            )}
+
+            {currentPage === "quota" && (
+              <QuotaSettings
+                settings={quotaSettings}
+                onChange={setQuotaSettings}
+                orders={orders}
               />
             )}
 

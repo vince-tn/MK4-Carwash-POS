@@ -14,9 +14,9 @@ Everyone logs in. The role on the employee's record decides what opens:
 
 | Role | Opens | Login |
 |---|---|---|
-| Admin | Dashboard, Sales Records, Commission Report, Employees, Logins, Services | their own |
-| Secretary | Worker Form (for any worker), Sales Records, Commission Report, Employees | shared `secretary@mk4.pos` |
-| Worker | Worker Form; the sale is filed under the name they pick | shared `worker@mk4.pos` |
+| Admin | Dashboard, Sales Records, Commission Report, Employees, Logins, Services, Vale / CM, Payslips, Quota | their own |
+| Secretary | Worker Form (for any worker), Sales Records, Commission Report, Employees, Vale / CM, Payslips | shared `secretary@mk4.pos` |
+| Worker | Worker Form (the sale is filed under the name they pick), Vale / CM; on a login of their own, also their own payslip and forms | shared `worker@mk4.pos` |
 
 An employee's **Login Email** links them to a login. A Worker or Secretary
 saved with it blank gets the shared login for their role. Setting someone
@@ -31,6 +31,32 @@ User** ticked. Sign-ups from the app are off.
 
 The database enforces all of this (row-level security and `create_order`);
 the app only hides what a role cannot use.
+
+## Several workers, quota bonus, Vale / CM and payslips
+
+Client revision of 2026-11-13 (`supabase/25`-`28`):
+
+- **Several workers on one car.** On the Worker Form each service says who
+  did it. A service with **Package Details** (Services page, e.g. Full
+  Package: Interior, Exterior, Engine) asks who did each detail; each detail
+  pays its share of the service's commission, split equally or by a % per
+  detail that must add up to 100%. Without details, everyone who did the
+  service splits it equally. Each add-on has a worker and a quantity. Each
+  worker earns their part under their own commission rule. Who earned what
+  is kept per sale in `order_credits`, which every report reads.
+- **Daily quota bonus.** Weekdays 60 cars, weekends (Saturday and Sunday) 80,
+  ₱150 each (Quota page). On a day the shop reaches the quota, every worker
+  who worked on at least one car that day earns the bonus. A change applies
+  from its date, today or later, so past weeks never move.
+- **Vale / CM.** A worker files one with the date, amount and a signature
+  drawn on the screen (stored in the private `signatures` bucket). An admin
+  or secretary approves or rejects it.
+- **Payslips.** An estimate per pay week, Monday to Sunday, paid the next
+  Monday: commission plus quota bonus, less approved Vale and CM dated in the
+  week. Admins and secretaries see, print and export everyone's. A worker on a
+  login of their own sees theirs; the shared worker login does not, since
+  everyone uses it. It is not a payroll record: nothing is stored, it is
+  worked out from the sales, the quota rules and the forms.
 
 ### Logins page: one-time setup
 

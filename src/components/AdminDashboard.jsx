@@ -18,13 +18,14 @@ import { localDateString } from "../lib/reportUtils";
 import { isSalesWorker } from "../lib/access";
 import { amountFor, unpaid } from "../lib/totals";
 import { totalsByWorker } from "../lib/credits";
+import { quotaFor } from "../lib/payroll";
 
 const peso = new Intl.NumberFormat("en-PH", {
   style: "currency",
   currency: "PHP",
 });
 
-export default function AdminDashboard({ orders, workers }) {
+export default function AdminDashboard({ orders, workers, quotaSettings = [] }) {
   const [expandedCard, setExpandedCard] = useState(null);
 
   // Everything below depends only on the sales, so it is worked out in one
@@ -101,9 +102,12 @@ export default function AdminDashboard({ orders, workers }) {
   } = stats;
   const totalCars = orders.length;
 
-  // The quota is per day. Every other figure on this page is all-time.
-  const quotaTarget = 60;
+  // The quota is per day, from the rule in force today: weekdays and
+  // weekends differ (supabase/26). Every other figure on this page is
+  // all-time.
   const today = localDateString();
+  const todaysQuota = quotaFor(today, quotaSettings);
+  const quotaTarget = Math.max(todaysQuota.quota, 1);
   const carsToday = orders.filter((order) => order.date === today).length;
   const quotaPercent = Math.min((carsToday / quotaTarget) * 100, 100);
 
@@ -220,7 +224,12 @@ export default function AdminDashboard({ orders, workers }) {
       <div className="quota-card">
         <div>
           <h3>Daily Quota Progress</h3>
-          <p>Target: 60 cars daily</p>
+          <p>
+            Target today: {quotaTarget} cars ({todaysQuota.weekend ? "weekend" : "weekday"})
+            {todaysQuota.bonus > 0
+              ? ` • ${peso.format(todaysQuota.bonus)} bonus for each worker who worked today`
+              : ""}
+          </p>
         </div>
 
         <div className="quota-bar">
@@ -229,7 +238,7 @@ export default function AdminDashboard({ orders, workers }) {
 
         <strong>
           {quotaPercent >= 100
-            ? "Quota reached. Incentive unlocked."
+            ? "Quota reached. Bonus unlocked for everyone who worked today."
             : `${quotaTarget - carsToday} cars remaining today`}
         </strong>
       </div>
