@@ -1138,3 +1138,159 @@ export function hasLocalData(keys) {
 
   return readJson(keys.workers).length > 0 || readJson(keys.orders).length > 0;
 }
+
+/* ------------------------------------------------------------ quota bonus */
+
+/*
+ * The daily car quota and bonus, weekday and weekend, each from an effective
+ * date (supabase/26). Admins add rules from today on; one already in force
+ * for past days cannot change, so past payslips never move.
+ */
+function toAppQuota(row) {
+  return {
+    id: row.id,
+    effectiveFrom: row.effective_from,
+    weekdayQuota: Number(row.weekday_quota) || 0,
+    weekendQuota: Number(row.weekend_quota) || 0,
+    weekdayBonus: num(row.weekday_bonus),
+    weekendBonus: num(row.weekend_bonus),
+    createdBy: row.created_by || "",
+    createdAt: row.created_at || null,
+  };
+}
+
+export async function fetchQuotaSettings() {
+  const { data, error } = await supabase
+    .from("quota_settings")
+    .select("*")
+    .order("effective_from", { ascending: false });
+
+  if (error) throw error;
+  return (data || []).map(toAppQuota);
+}
+
+// A rule for a date that already has one replaces it.
+export async function saveQuotaSetting(rule) {
+  const { error } = await supabase.from("quota_settings").upsert(
+    {
+      effective_from: rule.effectiveFrom,
+      weekday_quota: Math.round(Number(rule.weekdayQuota) || 0),
+      weekend_quota: Math.round(Number(rule.weekendQuota) || 0),
+      weekday_bonus: num(rule.weekdayBonus),
+      weekend_bonus: num(rule.weekendBonus),
+    },
+    { onConflict: "effective_from" }
+  );
+
+  if (error) throw error;
+  return fetchQuotaSettings();
+}
+
+export async function removeQuotaSetting(id) {
+  const { data, error } = await supabase.from("quota_settings").delete().eq("id", id).select("id");
+
+  if (error) throw error;
+  if (!data?.length) {
+    throw new Error("A rule already in force cannot be removed. Add a new one from today instead.");
+  }
+  return fetchQuotaSettings();
+}
+
+/* ------------------------------------------------------------ Vale and CM */
+
+/*
+ * Vale and CM forms (supabase/27): filed with a signature, then approved or
+ * rejected by an admin or secretary. Approved ones come off that week's
+ * payslip.
+ */
+function toAppRequest(row) {
+  return {
+    id: row.id,
+    kind: row.kind,
+    workerId: row.worker_id || "",
+    workerName: row.worker_name || "",
+    requestDate: row.request_date,
+    amount: num(row.amount),
+    reason: row.reason || "",
+    signaturePath: row.signature_path || "",
+    status: row.status,
+    filedBy: row.filed_by || "",
+    filedAt: row.filed_at || null,
+    reviewedBy: row.reviewed_by || "",
+    reviewedAt: row.reviewed_at || null,
+    reviewNote: row.review_note || "",
+  };
+}
+
+// Every form, newest first: admins and secretaries.
+export async function fetchRequests() {
+  const rows = await fetchAllPages(async (from, to, withCount) => {
+    const { data, error, count } = await supabase
+      .from("worker_requests")
+      .select("*", withCount ? { count: "exact" } : undefined)
+      .order("request_date", { ascending: false })
+      .order("filed_at", { ascending: false })
+      .order("id")
+      .range(from, to);
+
+    if (error) throw error;
+    return { rows: data || [], count };
+  });
+
+  return [...new Map(rows.map((row) => [row.id, row])).values()].map(toAppRequest);
+}
+
+// A worker's own forms, on a login of their own; none on the shared one.
+export async function fetchMyRequests() {
+  const { data, error } = await supabase.rpc("my_requests");
+
+  if (error) throw error;
+  return (data || []).map(toAppRequest);
+}
+
+export async function fileRequest({ kind, workerId, requestDate, amount, reason, signaturePath }) {
+  const { data, error } = await supabase.rpc("file_request", {
+    p_kind: kind,
+    p_worker_id: workerId || null,
+    p_request_date: requestDate,
+    p_amount: num(amount),
+    p_reason: reason?.trim() || null,
+    p_signature_path: signaturePath,
+  });
+
+  if (error) throw error;
+  return data;
+}
+
+export async function reviewRequest(id, status, note) {
+  const { error } = await supabase.rpc("review_request", {
+    p_id: id,
+    p_status: status,
+    p_note: note?.trim() || null,
+  });
+
+  if (error) throw error;
+}
+
+/* --------------------------------------------------------------- payslips */
+
+// The signed-in worker's own pay week (supabase/28), for lib/payroll.
+export async function fetchMyPayWeek(day) {
+  const { data, error } = await supabase.rpc("my_pay_week", { p_day: day });
+
+  if (error) throw error;
+
+  return {
+    worker: data.worker,
+    start: data.start,
+    end: data.end,
+    days: (data.days || []).map((d) => ({
+      date: d.date,
+      shopCars: Number(d.shop_cars) || 0,
+      cars: Number(d.cars) || 0,
+      commission: num(d.commission),
+    })),
+    quotaSettings: (data.quota_settings || []).map(toAppQuota),
+    requests: (data.requests || []).map(toAppRequest),
+  };
+}
