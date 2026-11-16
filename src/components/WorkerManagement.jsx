@@ -3,6 +3,7 @@ import WorkerReports from "./WorkerReports";
 import { localDateString } from "../lib/reportUtils";
 import { isSalesWorker } from "../lib/access";
 import { saleValue } from "../lib/totals";
+import { workerParts } from "../lib/credits";
 
 const ROLES = ["Admin", "Secretary", "Worker"];
 
@@ -43,27 +44,35 @@ const NO_SALES = { cars: 0, sales: 0, commission: 0, latestOrder: "No sales yet"
  * Every employee's totals from one pass over the sales. This used to filter
  * all sales once per employee on every render, including each keystroke in
  * the Add Employee form, which grows with employees times sales. Sales arrive
- * newest first, so an employee's first sale seen is their latest.
+ * newest first, so an employee's first sale seen is their latest. A car
+ * several workers shared counts for each, with their part of its sale and
+ * what they earned on it (lib/credits, supabase/25).
  */
 function statsByWorker(orders) {
   const stats = new Map();
 
   orders.forEach((order) => {
-    let entry = stats.get(order.workerId);
+    const value = saleValue(order);
 
-    if (!entry) {
-      entry = {
-        cars: 0,
-        sales: 0,
-        commission: 0,
-        latestOrder: order.date || "No sales yet",
-      };
-      stats.set(order.workerId, entry);
+    for (const part of workerParts(order)) {
+      if (!part.workerId) continue;
+
+      let entry = stats.get(part.workerId);
+
+      if (!entry) {
+        entry = {
+          cars: 0,
+          sales: 0,
+          commission: 0,
+          latestOrder: order.date || "No sales yet",
+        };
+        stats.set(part.workerId, entry);
+      }
+
+      entry.cars += 1;
+      entry.sales += value * part.share;
+      entry.commission += part.commission;
     }
-
-    entry.cars += 1;
-    entry.sales += saleValue(order);
-    entry.commission += Number(order.commission || 0);
   });
 
   return stats;

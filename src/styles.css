@@ -2213,3 +2213,223 @@ td {
   pointer-events: none;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
+
+/* --- Several workers per car (components/WhoDidIt) --- */
+
+.done-by {
+  padding: 0 18px 18px;
+  display: grid;
+  gap: 10px;
+}
+
+.done-by-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--black);
+}
+
+.done-by-steps {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.done-by-steps label > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.done-by-steps small {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.done-by-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.done-by-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 6px 6px 12px;
+  border-radius: 999px;
+  background: rgba(239, 31, 45, 0.08);
+  border: 1px solid rgba(239, 31, 45, 0.35);
+  color: var(--red-dark);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.done-by-chip button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.done-by-chip button:hover:not(:disabled) {
+  background: rgba(239, 31, 45, 0.15);
+}
+
+.done-by-chip button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+select.done-by-add {
+  width: auto;
+  min-width: 160px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+.addon-lines {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.addon-lines li {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) auto minmax(0, 1.4fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: white;
+}
+
+.addon-lines select {
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+
+.addon-line-amount {
+  font-weight: 900;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.qty-stepper {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.qty-stepper button {
+  border: 0;
+  background: #f4f4f5;
+  width: 34px;
+  height: 34px;
+  font-size: 18px;
+  font-weight: 900;
+  cursor: pointer;
+  color: var(--black);
+}
+
+.qty-stepper button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.qty-stepper strong {
+  min-width: 30px;
+  text-align: center;
+}
+
+@media (max-width: 700px) {
+  .done-by-steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Name and amount on top, how many and who below. */
+  .addon-lines li {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "name amount"
+      "qty who";
+  }
+
+  .addon-lines li > strong:first-child {
+    grid-area: name;
+  }
+
+  .addon-lines li > .qty-stepper,
+  .addon-lines li > .field-hint {
+    grid-area: qty;
+  }
+
+  .addon-lines li > select {
+    grid-area: who;
+  }
+
+  .addon-lines li > .addon-line-amount {
+    grid-area: amount;
+  }
+}
+
+/* --- Package details on the Services page (components/PackageDetails) --- */
+
+.detail-split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.detail-split .check-label {
+  color: var(--black);
+  text-decoration: none;
+  gap: 8px;
+  font-weight: 800;
+}
+
+.detail-total {
+  margin: 0;
+  font-weight: 900;
+  text-align: right;
+}
+
+.detail-amounts {
+  display: grid;
+  gap: 6px;
+}
+
+.detail-amounts table {
+  min-width: 0;
+  font-size: 13px;
+}
+
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.submit-btn.detail-save {
+  width: auto;
+  padding: 12px 18px;
+  border-radius: 14px;
+}
+
+.submit-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}

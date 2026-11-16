@@ -1,5 +1,6 @@
 import { buildDefaultPricing } from "../data/pricing";
 import { peso } from "../lib/reportUtils";
+import PackageDetails from "./PackageDetails";
 
 // Category names, add-on names and sizes within a category are unique in the
 // database (06), so two "New Service" rows would be refused on save.
@@ -38,6 +39,8 @@ function defaultsKeepingIds(current) {
           ...item,
           id: itemBySize.get(item.size)?.id || item.id,
         })),
+        // The default list has no package details; a shop's own are kept.
+        processes: existing.processes || [],
       };
     }),
     addOns: defaults.addOns.map((addOn) => ({
@@ -250,6 +253,9 @@ export default function ServicesManagement({ pricing, onUpdatePricing }) {
                       {Number(category.commissionRate) || 0}% commission •{" "}
                       {category.items.length}{" "}
                       {category.items.length === 1 ? "package" : "packages"}
+                      {category.processes?.length
+                        ? ` • ${category.processes.length} ${category.processes.length === 1 ? "detail" : "details"}`
+                        : ""}
                     </span>
                   </div>
 
@@ -367,6 +373,15 @@ export default function ServicesManagement({ pricing, onUpdatePricing }) {
                       + Add Package / Size
                     </button>
                   </div>
+
+                  <PackageDetails
+                    // A save starts a fresh draft from what was stored.
+                    key={`${category.id}:${(category.processes || [])
+                      .map((detail) => `${detail.id}=${detail.name}=${detail.sharePercent}`)
+                      .join("|")}`}
+                    category={category}
+                    onSave={(processes) => updateCategory(category.id, { processes })}
+                  />
 
                   <button
                     type="button"

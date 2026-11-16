@@ -1,6 +1,7 @@
 import { Fragment, useMemo, useState } from "react";
 import { Download } from "lucide-react";
 import { summarise } from "../lib/totals";
+import { workerNames as namesOn, workerParts } from "../lib/credits";
 import {
   peso,
   getPeriodKey,
@@ -119,9 +120,10 @@ export default function DashboardReport({ orders, mode }) {
       return { columns, rows, filename: "cars-report", grouped, periodKeys };
     }
 
-    // commission
+    // commission: each worker's part of every sale they worked on
+    // (lib/credits), so a shared car is split between them.
     const workerNames = [
-      ...new Set(orders.map((order) => order.washerName || "Unknown")),
+      ...new Set(orders.flatMap((order) => workerParts(order).map((part) => part.name))),
     ];
 
     const columns = [
@@ -134,9 +136,14 @@ export default function DashboardReport({ orders, mode }) {
       const periodOrders = grouped[key];
 
       const perWorker = workerNames.map((name) =>
-        periodOrders
-          .filter((order) => (order.washerName || "Unknown") === name)
-          .reduce((sum, order) => sum + Number(order.commission || 0), 0)
+        periodOrders.reduce(
+          (sum, order) =>
+            sum +
+            workerParts(order)
+              .filter((part) => part.name === name)
+              .reduce((partSum, part) => partSum + part.commission, 0),
+          0
+        )
       );
 
       return [
@@ -304,7 +311,7 @@ export default function DashboardReport({ orders, mode }) {
                                       <td>{order.carType || "—"}</td>
                                       <td>{order.customerName || "—"}</td>
                                       <td>{order.contactNumber || "—"}</td>
-                                      <td>{order.washerName || "—"}</td>
+                                      <td>{namesOn(order) || "—"}</td>
                                       <td>{describeServices(order)}</td>
                                       <td>
                                         {peso.format(Number(order.total) || 0)}

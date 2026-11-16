@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from "react";
 import { Download } from "lucide-react";
-import { addUp, byEmployee, commissionRow } from "../lib/commissionReport";
+import { addUp, byEmployee, commissionRows } from "../lib/commissionReport";
 import { downloadCSV, getPeriodKey, localDateString, peso } from "../lib/reportUtils";
 
 /*
@@ -55,7 +55,7 @@ export default function CommissionReport({ orders, workers }) {
     () =>
       orders
         .filter((order) => (!range.from || order.date >= range.from) && (!range.to || order.date <= range.to))
-        .map(commissionRow),
+        .flatMap(commissionRows),
     [orders, range]
   );
 

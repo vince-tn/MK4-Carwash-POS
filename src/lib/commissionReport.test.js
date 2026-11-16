@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { addUp, byEmployee, commissionRow } from "./commissionReport.js";
+import { addUp, byEmployee, commissionRow, commissionRows } from "./commissionReport.js";
 
 const sale = (fields) => ({
   id: "SO-1",
@@ -72,4 +72,37 @@ test("a sale whose worker was deleted is still reported under their name", () =>
 
   assert.equal(group.employee, "Former Worker");
   assert.equal(group.totals.commission, 50);
+});
+
+test("a car shared by two workers: a row each, the car counted once", () => {
+  const order = sale({
+    services: [{ id: "s1", category: "Full Package", size: "Medium", price: 1000, commission: 300 }],
+    addOnLines: [{ id: "x1", name: "Mr Pink", qty: 2, price: 300, commission: 30 }],
+    commission: 380,
+    credits: [
+      { kind: "service", serviceId: "s1", workerId: "w1", workerName: "Anjo", process: "Interior", share: 0.6, salesAmount: 600, commission: 180 },
+      { kind: "service", serviceId: "s1", workerId: "w2", workerName: "Randy", process: "Exterior", share: 0.4, salesAmount: 400, commission: 120 },
+      { kind: "addon", addOnId: "x1", workerId: "w2", workerName: "Randy", share: 1, salesAmount: 300, commission: 30 },
+      { kind: "sale", workerId: "w1", workerName: "Anjo", share: 1, salesAmount: 0, commission: 50 },
+    ],
+  });
+
+  const rows = commissionRows(order);
+  assert.deepEqual(
+    rows.map((row) => [row.employee, row.services, row.addOns, row.serviceCommission, row.addOnCommission, row.commission]),
+    [
+      ["Anjo", ["Full Package - Medium (Interior)"], [], 230, 0, 230],
+      ["Randy", ["Full Package - Medium (Exterior)"], ["2 x Mr Pink"], 120, 30, 150],
+    ]
+  );
+
+  const totals = addUp(rows);
+  assert.equal(totals.commission, order.commission);
+  assert.equal(totals.cars, 1);
+  assert.equal(totals.serviceCount, 1);
+  assert.equal(totals.serviceAmount, 1000);
+  assert.equal(totals.addOnCount, 1);
+
+  const groups = byEmployee(rows);
+  assert.deepEqual(groups.map((group) => [group.employee, group.totals.cars]), [["Anjo", 1], ["Randy", 1]]);
 });

@@ -16,7 +16,8 @@ import WorkerReports from "./WorkerReports";
 import DashboardReport from "./DashboardReport";
 import { localDateString } from "../lib/reportUtils";
 import { isSalesWorker } from "../lib/access";
-import { amountFor, saleValue, unpaid } from "../lib/totals";
+import { amountFor, unpaid } from "../lib/totals";
+import { totalsByWorker } from "../lib/credits";
 
 const peso = new Intl.NumberFormat("en-PH", {
   style: "currency",
@@ -56,20 +57,19 @@ export default function AdminDashboard({ orders, workers }) {
           (serviceMap[service.category] || 0) + Number(service.price || 0);
       });
 
-      if (!workerMap[order.washerName]) {
-        workerMap[order.washerName] = {
-          worker: order.washerName,
-          workerId: order.workerId,
-          cars: 0,
-          commission: 0,
-          sales: 0,
-        };
-      }
-
-      workerMap[order.washerName].cars += 1;
-      workerMap[order.washerName].commission += Number(order.commission || 0);
-      workerMap[order.washerName].sales += saleValue(order);
     });
+
+    // Per worker: every car they worked on, what they earned on it, and
+    // their share of its sale (lib/credits; a car can be shared, supabase/25).
+    for (const entry of totalsByWorker(orders).values()) {
+      workerMap[entry.key] = {
+        worker: entry.name,
+        workerId: entry.workerId,
+        cars: entry.cars,
+        commission: entry.commission,
+        sales: entry.sales,
+      };
+    }
 
     // Total Sales is the money taken plus what customers still owe, as in
     // lib/totals (Unpaid included at the client's request, 2026-10-27). The

@@ -1,6 +1,7 @@
 import { Fragment, useMemo, useState } from "react";
 import { Download } from "lucide-react";
 import { saleValue, summarise } from "../lib/totals";
+import { partFor, totalsByWorker, workerParts } from "../lib/credits";
 import {
   peso,
   csvSafe,
@@ -59,11 +60,14 @@ export default function WorkerReports({
         services.set(name, entry);
       }
 
-      const who = order.washerName || "Unknown";
-      const worker = byWorker.get(who) || { name: who, cars: 0, sales: 0 };
-      worker.cars += 1;
-      worker.sales += value;
-      byWorker.set(who, worker);
+      // A shared car counts for each worker on it, with their share of
+      // the sale (lib/credits).
+      for (const part of workerParts(order)) {
+        const worker = byWorker.get(part.key) || { name: part.name, cars: 0, sales: 0 };
+        worker.cars += 1;
+        worker.sales += value * part.share;
+        byWorker.set(part.key, worker);
+      }
     }
 
     return {
@@ -74,8 +78,10 @@ export default function WorkerReports({
   }
 
   const relevantOrders = useMemo(() => {
+    // Every car the worker did anything on, not only those recorded under
+    // them.
     if (view === "individual") {
-      return orders.filter((order) => order.workerId === workerId);
+      return orders.filter((order) => partFor(order, workerId));
     }
     return orders;
   }, [orders, view, workerId]);
@@ -98,14 +104,21 @@ export default function WorkerReports({
       }
 
       const value = saleValue(order);
+      const parts = workerParts(order);
+
+      // One worker's report counts their part of each car; the summary
+      // counts whole cars.
+      const mine = view === "individual" ? partFor(order, workerId) : null;
 
       map[key].cars += 1;
-      map[key].sales += value;
-      map[key].commission += Number(order.commission || 0);
+      map[key].sales += mine ? value * mine.share : value;
+      map[key].commission += mine ? mine.commission : Number(order.commission || 0);
       map[key].orders.push(order);
 
-      const name = order.washerName || "Unknown";
-      map[key].workerTotals[name] = (map[key].workerTotals[name] || 0) + value;
+      for (const part of parts) {
+        map[key].workerTotals[part.name] =
+          (map[key].workerTotals[part.name] || 0) + value * part.share;
+      }
     });
 
     return Object.values(map)
@@ -116,7 +129,7 @@ export default function WorkerReports({
           "—",
       }))
       .sort((a, b) => b.key.localeCompare(a.key));
-  }, [relevantOrders, period]);
+  }, [relevantOrders, period, view, workerId]);
 
   const totals = useMemo(() => {
     return periodRows.reduce(
@@ -129,23 +142,10 @@ export default function WorkerReports({
     );
   }, [periodRows]);
 
-  const workerTotals = useMemo(() => {
-    const map = {};
-
-    orders.forEach((order) => {
-      const name = order.washerName || "Unknown";
-
-      if (!map[name]) {
-        map[name] = { name, cars: 0, sales: 0, commission: 0 };
-      }
-
-      map[name].cars += 1;
-      map[name].sales += saleValue(order);
-      map[name].commission += Number(order.commission || 0);
-    });
-
-    return Object.values(map).sort((a, b) => b.sales - a.sales);
-  }, [orders]);
+  const workerTotals = useMemo(
+    () => [...totalsByWorker(orders).values()].sort((a, b) => b.sales - a.sales),
+    [orders]
+  );
 
   function exportReportCSV() {
     if (periodRows.length === 0) {
