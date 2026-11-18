@@ -16,7 +16,7 @@ Everyone logs in. The role on the employee's record decides what opens:
 |---|---|---|
 | Admin | Dashboard, Sales Records, Commission Report, Employees, Logins, Services, Vale / Cash Advance, Payslips, Quota | their own |
 | Secretary | Worker Form (for any worker), Sales Records, Commission Report, Employees, Vale / Cash Advance, Payslips | shared `secretary@mk4.pos` |
-| Worker | Worker Form (the sale is filed under the name they pick), Vale / Cash Advance; on a login of their own, also their own payslip and forms | shared `worker@mk4.pos` |
+| Worker | Worker Form (who did each service is chosen on it), Vale / Cash Advance; on a login of their own, also their own payslip and forms | shared `worker@mk4.pos` |
 
 An employee's **Login Email** links them to a login. A Worker or Secretary
 saved with it blank gets the shared login for their role. Setting someone
@@ -44,6 +44,10 @@ Client revision of 2026-11-13 (`supabase/25`-`28`):
   service splits it equally. Each add-on has a worker and a quantity. Each
   worker earns their part under their own commission rule. Who earned what
   is kept per sale in `order_credits`, which every report reads.
+  The form has no single "Worker" for the whole car (`supabase/30`): every
+  service, detail and add-on must have someone on it, and the sale is filed
+  under the first worker credited. On the shared worker login at least one
+  worker of that login must be on the car.
 - **Daily quota bonus.** Weekdays 60 cars, weekends (Saturday and Sunday) 80,
   ₱150 each (Quota page). On a day the shop reaches the quota, every worker
   who worked on at least one car that day earns the bonus. A change applies

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { localDateString } from "../lib/reportUtils";
-import { addOnLineFor, assignmentsFor, creditSale, servicesWithNobody } from "../lib/commission";
+import { addOnLineFor, assignmentsFor, creditSale, partsWithNobody } from "../lib/commission";
 import { DoneBy, QtyStepper, WorkerPick } from "./WhoDidIt";
 
 const peso = new Intl.NumberFormat("en-PH", {
@@ -9,7 +9,7 @@ const peso = new Intl.NumberFormat("en-PH", {
   currency: "PHP",
 });
 
-function createBlankService(pricingData) {
+function createBlankService(pricingData, ownWorker) {
   const firstCategory = pricingData[0];
   const firstItem = firstCategory?.items?.[0];
 
@@ -20,8 +20,9 @@ function createBlankService(pricingData) {
     price: firstItem?.price || 0,
     commissionType: firstCategory?.commissionType || "",
     commissionRate: firstCategory?.commissionRate || 0,
-    // Who did it (components/WhoDidIt): "" is the car's own worker.
-    doneBy: [""],
+    // Who did it (components/WhoDidIt). On a login of one worker's own it
+    // starts on them (""); otherwise on nobody, to be chosen.
+    doneBy: ownWorker ? [""] : [],
     steps: {},
   };
 }
@@ -29,9 +30,8 @@ function createBlankService(pricingData) {
 export default function WorkerForm({
   onAddOrder,
   workers,
-  // Every active worker, for choosing who helped (supabase/25).
+  // Every active worker, for choosing who did what (supabase/25).
   helpers = [],
-  chooseWorkerLabel = "Select your name",
   commissionSettings,
   pricingData,
   addOns,
@@ -39,9 +39,13 @@ export default function WorkerForm({
   const today = localDateString();
   const activeWorkers = workers.filter((worker) => worker.status === "Active");
 
-  // A personal login has one worker, chosen for them. The shared worker login
-  // has several, and none is preselected, so a sale is never filed under the
-  // first name in the list because nobody changed it.
+  // There is no "Worker" for the whole car any more (client, 2026-11-18):
+  // who did it is chosen service by service, detail by detail and add-on by
+  // add-on below, and the database files the sale under the first worker
+  // credited (supabase/30). On a login of one worker's own, everything starts
+  // on them. On the shared login, or for a secretary, everything starts on
+  // nobody, so a car is never credited to whoever happens to be first in a
+  // list.
   const defaultWorkerId = activeWorkers.length === 1 ? activeWorkers[0].id : "";
 
   const [form, setForm] = useState({
@@ -52,7 +56,7 @@ export default function WorkerForm({
     carType: "Medium",
     workerId: defaultWorkerId,
     manager: "",
-    services: [createBlankService(pricingData)],
+    services: [createBlankService(pricingData, defaultWorkerId)],
     selectedAddOns: [],
     // Per chosen add-on: how many, and who did it ("" = the car's worker).
     addOnChoices: {},
@@ -253,7 +257,7 @@ export default function WorkerForm({
   function addService() {
     setForm((prev) => ({
       ...prev,
-      services: [...prev.services, createBlankService(pricingData)],
+      services: [...prev.services, createBlankService(pricingData, defaultWorkerId)],
     }));
   }
 
@@ -379,7 +383,7 @@ export default function WorkerForm({
       carType: "Medium",
       workerId: defaultWorkerId,
       manager: "",
-      services: [createBlankService(pricingData)],
+      services: [createBlankService(pricingData, defaultWorkerId)],
       selectedAddOns: [],
       addOnChoices: {},
       laborDetails: "",
@@ -416,18 +420,19 @@ export default function WorkerForm({
       return;
     }
 
-    if (!form.workerId) {
-      alert(
-        activeWorkers.length
-          ? "Please choose which worker did this car."
-          : "Please select a worker. Add workers on the Employees page."
-      );
+    if (!pickable.length) {
+      alert("There are no active workers. Add workers on the Employees page.");
       return;
     }
 
-    const nobody = servicesWithNobody(form.services, pricingData, form.workerId);
+    const nobody = partsWithNobody({
+      services: form.services,
+      pricingData,
+      leadId: form.workerId,
+      addOnLines,
+    });
     if (nobody.length) {
-      alert(`Choose who did ${nobody.map((service) => service.category).join(", ")}.`);
+      alert(`Choose who did ${nobody.join(", ")}.`);
       return;
     }
 
@@ -483,7 +488,10 @@ export default function WorkerForm({
       addOnLines: commissionResult.addOnLines,
       saleCredits: commissionResult.saleCredits,
       photoPath,
-      washerName: selectedWorker?.name || "Unknown Worker",
+      // No worker for the whole car: the database files it under the first
+      // worker credited (supabase/30). Named here only for the screen.
+      workerId: "",
+      washerName: split[0]?.name || "",
       serviceTotal,
       addOnTotal,
       total,
@@ -594,26 +602,7 @@ export default function WorkerForm({
               />
             </label>
 
-            <label>
-              Worker
-              <select
-                value={form.workerId}
-                onChange={(e) => updateField("workerId", e.target.value)}
-              >
-                {activeWorkers.length > 1 && (
-                  <option value="" disabled>
-                    {chooseWorkerLabel}
-                  </option>
-                )}
-                {activeWorkers.map((worker) => (
-                  <option key={worker.id} value={worker.id}>
-                    {worker.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label>
+            <label className="wide-field">
               Staff on Duty
               <input
                 type="text"
@@ -706,6 +695,7 @@ export default function WorkerForm({
                     helpers={pickable}
                     leadId={form.workerId}
                     leadName={selectedWorker?.name}
+                    leadSuffix=""
                     onChange={(patch) => updateServiceWorkers(service.id, patch)}
                   />
                 </div>
@@ -764,6 +754,7 @@ export default function WorkerForm({
                         helpers={pickable}
                         leadId={form.workerId}
                         leadName={selectedWorker?.name}
+                    leadSuffix=""
                         label={`${line.name} done by`}
                       />
                       <span className="addon-line-amount">{peso.format(line.price)}</span>
@@ -1009,8 +1000,8 @@ export default function WorkerForm({
         </div>
 
         <div className="receipt-row">
-          <span>Worker</span>
-          <strong>{selectedWorker?.name || "—"}</strong>
+          <span>Workers</span>
+          <strong>{split.map((part) => part.name).join(", ") || "—"}</strong>
         </div>
 
         <div className="receipt-row">

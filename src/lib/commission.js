@@ -187,16 +187,32 @@ export function addOnLineFor(addOn, { qty = 1, workerId = "", laborAmount, labor
   };
 }
 
-// The services nobody has been put on yet, for the form to refuse to save.
-export function servicesWithNobody(services, pricingData, leadId) {
-  return services.filter(
-    (service) =>
-      !assignmentsFor(
-        service,
-        pricingData.find((item) => item.category === service.category),
-        leadId
-      ).some((assignment) => assignment.workerId)
-  );
+/*
+ * What nobody has been put on yet, for the form to refuse to save: a
+ * service with no worker, a package detail with no worker, an add-on with no
+ * worker. Each named as the form shows it.
+ */
+export function partsWithNobody({ services = [], pricingData = [], leadId = "", addOnLines = [] }) {
+  const missing = [];
+
+  for (const service of services) {
+    const category = pricingData.find((item) => item.category === service.category);
+    const assignments = assignmentsFor(service, category, leadId);
+
+    if (category?.processes?.length) {
+      for (const assignment of assignments) {
+        if (!assignment.workerId) missing.push(`${service.category}: ${assignment.process}`);
+      }
+    } else if (!assignments.length) {
+      missing.push(service.category);
+    }
+  }
+
+  for (const line of addOnLines) {
+    if (!line.workerId) missing.push(line.name);
+  }
+
+  return missing;
 }
 
 export function shareOut(assignments) {
