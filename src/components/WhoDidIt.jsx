@@ -7,20 +7,37 @@
  * lib/commission (assignmentsFor, creditSale).
  */
 
-function leadLabel(leadName) {
-  return leadName ? `${leadName} (the car's worker)` : "The car's worker";
+/*
+ * What "" shows as. Adding to a recorded sale, it is the sale's own worker.
+ * On the Worker Form, which no longer asks for one worker for the whole car
+ * (2026-11-18), it is the worker on a login of their own, shown by name, or,
+ * on a shared login or for a secretary, nobody yet.
+ */
+function leadLabel(leadId, leadName, leadSuffix) {
+  if (!leadId) return "Choose who did it";
+  return `${leadName || "The car's worker"}${leadSuffix}`;
 }
 
-// A worker picker whose first choice is the car's own worker.
-export function WorkerPick({ value, onChange, helpers, leadId, leadName, disabled, label }) {
+// A worker picker whose first choice is the car's own worker, if any.
+export function WorkerPick({
+  value,
+  onChange,
+  helpers,
+  leadId,
+  leadName,
+  leadSuffix = " (the car's worker)",
+  disabled,
+  label,
+}) {
   return (
     <select
       value={value || ""}
       onChange={(e) => onChange(e.target.value === leadId ? "" : e.target.value)}
       disabled={disabled}
       aria-label={label}
+      className={!value && !leadId ? "needs-worker" : undefined}
     >
-      <option value="">{leadLabel(leadName)}</option>
+      <option value="">{leadLabel(leadId, leadName, leadSuffix)}</option>
       {helpers
         .filter((worker) => worker.id !== leadId)
         .map((worker) => (
@@ -36,7 +53,16 @@ export function WorkerPick({ value, onChange, helpers, leadId, leadName, disable
  * For one service: a picker per step when the service has steps, otherwise
  * the workers who did it (they split it equally) and a way to add one.
  */
-export function DoneBy({ service, processes = [], helpers, leadId, leadName, onChange, disabled }) {
+export function DoneBy({
+  service,
+  processes = [],
+  helpers,
+  leadId,
+  leadName,
+  leadSuffix,
+  onChange,
+  disabled,
+}) {
   const nameOf = (workerId) =>
     workerId
       ? helpers.find((worker) => worker.id === workerId)?.name || "Former worker"
@@ -67,6 +93,7 @@ export function DoneBy({ service, processes = [], helpers, leadId, leadName, onC
                   helpers={helpers}
                   leadId={leadId}
                   leadName={leadName}
+                  leadSuffix={leadSuffix}
                   disabled={disabled}
                   label={`${process.name} done by`}
                 />

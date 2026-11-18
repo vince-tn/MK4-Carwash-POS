@@ -2717,3 +2717,10 @@ select.done-by-add {
 .form-tabs button {
   font-size: 15px;
 }
+
+/* A package detail or add-on nobody has been put on yet (no "Worker" for the
+   whole car since supabase/30). */
+select.needs-worker {
+  border-color: var(--danger);
+  color: var(--danger);
+}

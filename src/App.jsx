@@ -25,6 +25,7 @@ import { buildDefaultPricing } from "./data/pricing";
 import * as db from "./lib/db";
 import { accessFor, isSalesWorker, ROLE_LABELS } from "./lib/access";
 import { laterPaid } from "./lib/totals";
+import { workedOn } from "./lib/credits";
 
 // Each page is a separate download, fetched the first time it is needed and
 // prefetched once the login's role is known. A worker's phone never
@@ -441,7 +442,19 @@ export default function App() {
 
     const saved = await db.createOrder({ ...order, addOnPrices });
 
-    setOrders((prev) => [saved, ...prev]);
+    // Screens that list sales show it as the database filed it: who it is
+    // under (supabase/30) and who earned what. A worker login cannot read
+    // sales, and lists none.
+    let shown = saved;
+    if (can.loadOrders) {
+      try {
+        shown = await db.fetchOrder(saved.dbId);
+      } catch (error) {
+        console.error("Could not read back the new sale", error);
+      }
+    }
+
+    setOrders((prev) => [shown, ...prev]);
 
     // Before roles, a signed-in user went on to the dashboard. A worker,
     // signed in or not, stays on the form for the next car.
@@ -540,7 +553,8 @@ export default function App() {
     // The sales are kept (21): the foreign key only clears worker_id, and
     // worker_name is plain text, so they stay in the records under the name of
     // whoever did the car. Say so plainly, with the figures.
-    const theirOrders = orders.filter((order) => order.workerId === workerId);
+    // Every sale they worked on, not only those filed under them (25).
+    const theirOrders = orders.filter((order) => workedOn(order, workerId));
     const takings = theirOrders.reduce(
       (sum, order) => sum + Number(order.total || 0),
       0
@@ -993,11 +1007,6 @@ export default function App() {
                 // only workers. A worker login's list is workers already.
                 workers={workers.filter(isSalesWorker)}
                 helpers={activeWorkers}
-                chooseWorkerLabel={
-                  access?.role === "secretary"
-                    ? "Select the worker"
-                    : "Select your name"
-                }
                 commissionSettings={commissionSettings}
                 pricingData={pricing.categories}
                 addOns={pricing.addOns}

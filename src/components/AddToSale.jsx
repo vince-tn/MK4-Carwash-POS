@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { addOnLineFor, assignmentsFor, creditSale, servicesWithNobody } from "../lib/commission";
+import { addOnLineFor, assignmentsFor, creditSale, partsWithNobody } from "../lib/commission";
 import { DoneBy, QtyStepper, WorkerPick } from "./WhoDidIt";
 
 /*
@@ -215,9 +215,9 @@ export default function AddToSale({
       return;
     }
 
-    const nobody = servicesWithNobody(services, pricingData, leadId);
+    const nobody = partsWithNobody({ services, pricingData, leadId, addOnLines });
     if (nobody.length) {
-      alert(`Choose who did ${nobody.map((service) => service.category).join(", ")}.`);
+      alert(`Choose who did ${nobody.join(", ")}.`);
       return;
     }
 

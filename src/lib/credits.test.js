@@ -152,13 +152,36 @@ test("splitting a sale by worker never adds or loses a peso of Total Sales", () 
 });
 
 test("the first worker can be taken off a service; nobody left means nothing is credited", async () => {
-  const { assignmentsFor, servicesWithNobody } = await import("./commission.js");
+  const { assignmentsFor, partsWithNobody } = await import("./commission.js");
   const wash = { category: "Premium Wash", price: 250, commissionRate: 30 };
   const pricing = [{ category: "Premium Wash", processes: [] }];
 
   assert.deepEqual(assignmentsFor({ ...wash }, pricing[0], "a").map((x) => x.workerId), ["a"], "default: the car's worker");
   assert.deepEqual(assignmentsFor({ ...wash, doneBy: ["b"] }, pricing[0], "a").map((x) => x.workerId), ["b"], "first worker taken off");
   assert.deepEqual(assignmentsFor({ ...wash, doneBy: [] }, pricing[0], "a"), []);
-  assert.equal(servicesWithNobody([{ ...wash, doneBy: [] }, { ...wash, doneBy: ["b"] }], pricing, "a").length, 1);
-  assert.equal(servicesWithNobody([{ ...wash, doneBy: [""] }], pricing, "").length, 1, "no car's worker chosen yet");
+  assert.deepEqual(
+    partsWithNobody({ services: [{ ...wash, doneBy: [] }, { ...wash, doneBy: ["b"] }], pricingData: pricing, leadId: "a" }),
+    ["Premium Wash"]
+  );
+  assert.deepEqual(
+    partsWithNobody({ services: [{ ...wash, doneBy: [""] }], pricingData: pricing, leadId: "" }),
+    ["Premium Wash"],
+    "no worker of one's own to start on"
+  );
+});
+
+test("without a worker for the whole car, every package detail and add-on needs one", async () => {
+  const { partsWithNobody } = await import("./commission.js");
+  const full = { category: "Full Package", price: 5000, commissionRate: 20, steps: { p1: "a" } };
+  const pricing = [{ category: "Full Package", processes: [{ id: "p1", name: "Interior" }, { id: "p2", name: "Exterior" }] }];
+
+  assert.deepEqual(
+    partsWithNobody({ services: [full], pricingData: pricing, leadId: "", addOnLines: [{ name: "Mr Pink", workerId: "" }] }),
+    ["Full Package: Exterior", "Mr Pink"]
+  );
+  assert.deepEqual(
+    partsWithNobody({ services: [full], pricingData: pricing, leadId: "me", addOnLines: [{ name: "Mr Pink", workerId: "me" }] }),
+    [],
+    "on a login of one's own, what is not chosen is theirs"
+  );
 });

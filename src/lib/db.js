@@ -194,6 +194,12 @@ function toAppPayment(row) {
   };
 }
 
+// One sale as stored, for showing a sale just recorded exactly as the
+// database filed it (its worker, its credits).
+export async function fetchOrder(dbId) {
+  return fetchOrderById(dbId);
+}
+
 async function fetchOrderById(dbId) {
   const { data, error } = await supabase
     .from("orders")
