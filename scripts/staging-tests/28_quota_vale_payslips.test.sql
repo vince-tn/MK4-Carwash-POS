@@ -1,6 +1,6 @@
 -- STAGING ONLY. A rollback-only test of supabase/26_daily_quota_bonus.sql,
--- 27_vale_and_cm.sql and 28_weekly_payslips.sql: run it with Apply Migration
--- (project: staging) after 28. It acts as the admin, secretary, shared worker
+-- 27_vale_and_cm.sql, 28_weekly_payslips.sql and 29_cash_advance_replaces_cm.sql:
+-- run it with Apply Migration (project: staging) after 29. It acts as the admin, secretary, shared worker
 -- and a personal worker login, prints what happened (counts and yes/no only:
 -- the log is public), and then undoes everything. Every line ends in "ok" or
 -- "WRONG"; the last line counts the WRONGs.
@@ -120,7 +120,7 @@ begin
   raise notice 'WORKER FILES 10 DAYS BACK: % (want refused) -- %', msg, case when ok then 'ok' else 'WRONG' end;
 
   begin
-    perform public.file_request('cm', wa, v_today + 1, 500, null, v_sig);
+    perform public.file_request('cash_advance', wa, v_today + 1, 500, null, v_sig);
     msg := 'ALLOWED';
   exception when others then msg := 'refused';
   end;
@@ -128,7 +128,7 @@ begin
   raise notice 'FILING FOR TOMORROW: % (want refused) -- %', msg, case when ok then 'ok' else 'WRONG' end;
 
   begin
-    perform public.file_request('cm', wa, v_today, 500, null, v_today || '/' || gen_random_uuid() || '.png');
+    perform public.file_request('cash_advance', wa, v_today, 500, null, v_today || '/' || gen_random_uuid() || '.png');
     msg := 'ALLOWED';
   exception when others then msg := 'refused';
   end;
@@ -136,12 +136,20 @@ begin
   raise notice 'FILING WITHOUT A STORED SIGNATURE: % (want refused) -- %', msg, case when ok then 'ok' else 'WRONG' end;
 
   begin
-    perform public.file_request('cm', wa, v_today, 0, null, v_sig);
+    perform public.file_request('cash_advance', wa, v_today, 0, null, v_sig);
     msg := 'ALLOWED';
   exception when others then msg := 'refused';
   end;
   ok := msg = 'refused'; wrong := wrong + (not ok)::int;
   raise notice 'FILING ZERO PESOS: % (want refused) -- %', msg, case when ok then 'ok' else 'WRONG' end;
+
+  begin
+    perform public.file_request('cm', wa, v_today, 100, null, v_sig);
+    msg := 'ALLOWED';
+  exception when others then msg := 'refused';
+  end;
+  ok := msg = 'refused'; wrong := wrong + (not ok)::int;
+  raise notice 'FILING A CM (NOW CASH ADVANCE): % (want refused) -- %', msg, case when ok then 'ok' else 'WRONG' end;
 
   select count(*) into n from public.worker_requests;
   ok := n = 0; wrong := wrong + (not ok)::int;
@@ -172,10 +180,10 @@ begin
   raise notice 'WORKER OPENS SIGNATURES: % (want 0) -- %', n, case when ok then 'ok' else 'WRONG' end;
   execute 'reset role';
 
-  -- The personal worker files a CM for themself.
+  -- The personal worker files a Cash Advance for themself.
   perform set_config('request.jwt.claims', json_build_object('role', 'authenticated', 'email', v_personal)::text, true);
   execute 'set local role authenticated';
-  perform public.file_request('cm', null, v_today, 200, null, v_sig);
+  perform public.file_request('cash_advance', null, v_today, 200, null, v_sig);
   execute 'reset role';
 
   -- The secretary files an older Vale for them and approves both of theirs.

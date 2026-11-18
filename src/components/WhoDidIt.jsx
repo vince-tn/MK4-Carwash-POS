@@ -78,7 +78,10 @@ export function DoneBy({ service, processes = [], helpers, leadId, leadName, onC
     );
   }
 
-  const doneBy = service.doneBy?.length ? service.doneBy : [""];
+  // Any worker can be taken off, the first one too (client, 2026-11-18): to
+  // swap who did a service, take one off and add another. A service left
+  // with nobody says so, and the sale cannot be saved until someone is on it.
+  const doneBy = Array.isArray(service.doneBy) ? service.doneBy : [""];
   const resolved = doneBy.map((workerId) => workerId || leadId);
   const others = helpers.filter((worker) => !resolved.includes(worker.id));
 
@@ -94,13 +97,15 @@ export function DoneBy({ service, processes = [], helpers, leadId, leadName, onC
             <button
               type="button"
               aria-label={`Remove ${nameOf(workerId)}`}
-              disabled={disabled || doneBy.length === 1}
+              disabled={disabled}
               onClick={() => onChange({ doneBy: doneBy.filter((id) => id !== workerId) })}
             >
               ×
             </button>
           </span>
         ))}
+
+        {doneBy.length === 0 && <span className="done-by-empty">Nobody yet. Add who did it.</span>}
 
         {others.length > 0 && (
           <select
@@ -114,7 +119,7 @@ export function DoneBy({ service, processes = [], helpers, leadId, leadName, onC
               onChange({ doneBy: [...doneBy, id] });
             }}
           >
-            <option value="">+ Add a worker</option>
+            <option value="">{doneBy.length ? "+ Add a worker" : "+ Choose who did it"}</option>
             {others.map((worker) => (
               <option key={worker.id} value={worker.id}>
                 {worker.name}

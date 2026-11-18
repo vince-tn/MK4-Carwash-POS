@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { localDateString } from "../lib/reportUtils";
-import { addOnLineFor, assignmentsFor, creditSale } from "../lib/commission";
+import { addOnLineFor, assignmentsFor, creditSale, servicesWithNobody } from "../lib/commission";
 import { DoneBy, QtyStepper, WorkerPick } from "./WhoDidIt";
 
 const peso = new Intl.NumberFormat("en-PH", {
@@ -422,6 +422,12 @@ export default function WorkerForm({
           ? "Please choose which worker did this car."
           : "Please select a worker. Add workers on the Employees page."
       );
+      return;
+    }
+
+    const nobody = servicesWithNobody(form.services, pricingData, form.workerId);
+    if (nobody.length) {
+      alert(`Choose who did ${nobody.map((service) => service.category).join(", ")}.`);
       return;
     }
 

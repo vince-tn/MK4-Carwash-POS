@@ -2,7 +2,7 @@ import { supabase } from "./supabaseClient";
 import { localDateString } from "./reportUtils";
 
 /*
- * Signatures on Vale and CM forms (supabase/27): a PNG drawn on the screen,
+ * Signatures on Vale and Cash Advance forms (supabase/27): a PNG drawn on the screen,
  * stored in the private signatures bucket as <yyyy-mm-dd>/<uuid>.png, the
  * only shape the storage rules accept. Only admins and secretaries can open
  * one, through a short-lived signed link.

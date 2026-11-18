@@ -14,9 +14,9 @@ Everyone logs in. The role on the employee's record decides what opens:
 
 | Role | Opens | Login |
 |---|---|---|
-| Admin | Dashboard, Sales Records, Commission Report, Employees, Logins, Services, Vale / CM, Payslips, Quota | their own |
-| Secretary | Worker Form (for any worker), Sales Records, Commission Report, Employees, Vale / CM, Payslips | shared `secretary@mk4.pos` |
-| Worker | Worker Form (the sale is filed under the name they pick), Vale / CM; on a login of their own, also their own payslip and forms | shared `worker@mk4.pos` |
+| Admin | Dashboard, Sales Records, Commission Report, Employees, Logins, Services, Vale / Cash Advance, Payslips, Quota | their own |
+| Secretary | Worker Form (for any worker), Sales Records, Commission Report, Employees, Vale / Cash Advance, Payslips | shared `secretary@mk4.pos` |
+| Worker | Worker Form (the sale is filed under the name they pick), Vale / Cash Advance; on a login of their own, also their own payslip and forms | shared `worker@mk4.pos` |
 
 An employee's **Login Email** links them to a login. A Worker or Secretary
 saved with it blank gets the shared login for their role. Setting someone
@@ -32,7 +32,7 @@ User** ticked. Sign-ups from the app are off.
 The database enforces all of this (row-level security and `create_order`);
 the app only hides what a role cannot use.
 
-## Several workers, quota bonus, Vale / CM and payslips
+## Several workers, quota bonus, Vale / Cash Advance and payslips
 
 Client revision of 2026-11-13 (`supabase/25`-`28`):
 
@@ -48,11 +48,13 @@ Client revision of 2026-11-13 (`supabase/25`-`28`):
   ₱150 each (Quota page). On a day the shop reaches the quota, every worker
   who worked on at least one car that day earns the bonus. A change applies
   from its date, today or later, so past weeks never move.
-- **Vale / CM.** A worker files one with the date, amount and a signature
+- **Vale and Cash Advance.** Two separate forms laid out the same (what was
+  first called CM is the Cash Advance, `supabase/29`). A worker files one with
+  the date, amount and a signature
   drawn on the screen (stored in the private `signatures` bucket). An admin
   or secretary approves or rejects it.
 - **Payslips.** An estimate per pay week, Monday to Sunday, paid the next
-  Monday: commission plus quota bonus, less approved Vale and CM dated in the
+  Monday: commission plus quota bonus, less approved Vale and Cash Advance dated in the
   week. Admins and secretaries see, print and export everyone's. A worker on a
   login of their own sees theirs; the shared worker login does not, since
   everyone uses it. It is not a payroll record: nothing is stored, it is

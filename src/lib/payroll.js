@@ -8,7 +8,7 @@ import { creditsOf } from "./credits.js";
  *   commission what the worker earned on the cars they worked on (credits)
  *   bonus      for each day the shop reached its car quota and the worker
  *              worked on at least one car, that day's bonus
- *   deductions approved Vale and CM dated in the week
+ *   deductions approved Vale and Cash Advance dated in the week
  *
  * Admins and secretaries build it from the sales on screen (payslipsFor); a
  * worker on their own login gets the same figures from my_pay_week (28) and
@@ -108,7 +108,7 @@ export function weekFromOrders(orders, start) {
  * One worker's payslip from their week:
  *   days      [{ day, shopCars, cars, commission }] for the 7 days
  *   settings  the quota rules
- *   requests  their Vale / CM forms ({ kind, requestDate, amount, status })
+ *   requests  their Vale / Cash Advance forms ({ kind, requestDate, amount, status })
  */
 export function buildPayslip({ start, days, settings, requests = [] }) {
   const week = payWeek(start);
@@ -137,7 +137,7 @@ export function buildPayslip({ start, days, settings, requests = [] }) {
   const commission = sum(lines, "commission");
   const bonus = sum(lines, "bonus");
   const vale = sum(approved.filter((item) => item.kind === "vale"), "amount");
-  const cm = sum(approved.filter((item) => item.kind === "cm"), "amount");
+  const cashAdvance = sum(approved.filter((item) => item.kind === "cash_advance"), "amount");
 
   return {
     ...week,
@@ -148,9 +148,9 @@ export function buildPayslip({ start, days, settings, requests = [] }) {
     bonusDays: lines.filter((day) => day.bonus > 0).length,
     gross: round2(commission + bonus),
     vale,
-    cm,
-    deductions: round2(vale + cm),
-    net: round2(commission + bonus - vale - cm),
+    cashAdvance,
+    deductions: round2(vale + cashAdvance),
+    net: round2(commission + bonus - vale - cashAdvance),
     approved,
     pending,
   };

@@ -9,13 +9,13 @@ import { downloadCSV, localDateString, peso } from "../lib/reportUtils";
  *
  * An estimate for each pay week, Monday to Sunday, paid the next Monday:
  * commission on the cars a worker worked on, plus the quota bonus for each
- * day the shop reached its quota and they worked, less approved Vale and CM
+ * day the shop reached its quota and they worked, less approved Vale and Cash Advance
  * dated in the week. Admins and secretaries see everyone's, can print them
  * all and export them; a worker on a login of their own sees only theirs.
  */
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const KIND_LABEL = { vale: "Vale", cm: "CM" };
+const KIND_LABEL = { vale: "Vale", cash_advance: "Cash Advance" };
 
 function longDate(day) {
   return new Date(`${day}T00:00:00`).toLocaleDateString("en-PH", {
@@ -132,7 +132,7 @@ export function PayslipCard({ name, slip }) {
       )}
 
       <p className="field-hint">
-        An estimate from the sales recorded, the quota rules and approved Vale / CM. Not a payroll
+        An estimate from the sales recorded, the quota rules and approved Vale / Cash Advance. Not a payroll
         record.
       </p>
     </article>
@@ -175,7 +175,7 @@ function EveryonesPayslips({ orders, workers, quotaSettings, start }) {
     db.fetchRequests()
       .then((list) => current && setRequests(list))
       .catch((error) => {
-        console.error("Could not load the Vale / CM forms", error);
+        console.error("Could not load the Vale / Cash Advance forms", error);
         if (current) setLoadError(error.message);
       });
 
@@ -208,7 +208,7 @@ function EveryonesPayslips({ orders, workers, quotaSettings, start }) {
 
     downloadCSV(
       `mk4-payslips-${start}.csv`,
-      ["Worker", "Week", "Payday", "Cars", "Commission", "Bonus Days", "Quota Bonus", "Gross", "Vale", "CM", "Estimated Pay", "Pending Vale / CM"],
+      ["Worker", "Week", "Payday", "Cars", "Commission", "Bonus Days", "Quota Bonus", "Gross", "Vale", "Cash Advance", "Estimated Pay", "Pending Vale / Cash Advance"],
       [
         ...slips.map((slip) => [
           slip.name,
@@ -220,7 +220,7 @@ function EveryonesPayslips({ orders, workers, quotaSettings, start }) {
           money(slip.bonus),
           money(slip.gross),
           money(slip.vale),
-          money(slip.cm),
+          money(slip.cashAdvance),
           money(slip.net),
           money(slip.pending.reduce((sum, request) => sum + request.amount, 0)),
         ]),
@@ -229,7 +229,7 @@ function EveryonesPayslips({ orders, workers, quotaSettings, start }) {
     );
   }
 
-  if (loadError) return <p className="empty danger-text">Could not load the Vale / CM forms: {loadError}</p>;
+  if (loadError) return <p className="empty danger-text">Could not load the Vale / Cash Advance forms: {loadError}</p>;
   if (!requests) return <p className="empty">Loading payslips...</p>;
   if (!slips.length) return <p className="empty">No workers to show for this week.</p>;
 
@@ -255,7 +255,7 @@ function EveryonesPayslips({ orders, workers, quotaSettings, start }) {
               <th>Cars</th>
               <th>Commission</th>
               <th>Quota Bonus</th>
-              <th>Vale / CM</th>
+              <th>Vale / Cash Advance</th>
               <th>Estimated Pay</th>
             </tr>
           </thead>
@@ -335,7 +335,7 @@ export default function Payslips({ orders = [], workers = [], quotaSettings = []
           <h2>{own ? "Your estimated pay" : "Estimated pay per worker"}</h2>
           <p className="field-hint">
             Monday to Sunday, paid the next Monday: commission plus the quota bonus, less approved
-            Vale and CM.
+            Vale and Cash Advance.
           </p>
         </div>
       </div>

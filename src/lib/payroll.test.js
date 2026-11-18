@@ -42,7 +42,7 @@ test("bonus only on days the shop reached its quota and the worker worked", () =
     ],
     requests: [
       { kind: "vale", requestDate: "2026-11-17", amount: 500, status: "approved" },
-      { kind: "cm", requestDate: "2026-11-20", amount: 100, status: "approved" },
+      { kind: "cash_advance", requestDate: "2026-11-20", amount: 100, status: "approved" },
       { kind: "vale", requestDate: "2026-11-21", amount: 999, status: "pending" },
       { kind: "vale", requestDate: "2026-11-21", amount: 999, status: "rejected" },
       { kind: "vale", requestDate: "2026-11-23", amount: 999, status: "approved" }, // next week
@@ -55,7 +55,7 @@ test("bonus only on days the shop reached its quota and the worker worked", () =
   assert.equal(slip.bonus, 600);
   assert.equal(slip.bonusDays, 3);
   assert.equal(slip.gross, 1425);
-  assert.deepEqual([slip.vale, slip.cm, slip.deductions], [500, 100, 600]);
+  assert.deepEqual([slip.vale, slip.cashAdvance, slip.deductions], [500, 100, 600]);
   assert.equal(slip.net, 825);
   assert.equal(slip.pending.length, 1);
   assert.equal(slip.payday, "2026-11-23");
@@ -96,12 +96,12 @@ test("a worker's own week from the database gives the same payslip", () => {
   const slip = payslipFromWeek({
     start: "2026-11-16",
     quotaSettings: settings,
-    requests: [{ kind: "cm", requestDate: "2026-11-16", amount: 50, status: "approved" }],
+    requests: [{ kind: "cash_advance", requestDate: "2026-11-16", amount: 50, status: "approved" }],
     days: [
       { date: "2026-11-16", shopCars: 61, cars: 1, commission: 75 },
       ...["17", "18", "19", "20", "21", "22"].map((d) => ({ date: `2026-11-${d}`, shopCars: 0, cars: 0, commission: 0 })),
     ],
   });
 
-  assert.deepEqual([slip.commission, slip.bonus, slip.cm, slip.net], [75, 150, 50, 175]);
+  assert.deepEqual([slip.commission, slip.bonus, slip.cashAdvance, slip.net], [75, 150, 50, 175]);
 });
