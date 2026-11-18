@@ -150,3 +150,15 @@ test("splitting a sale by worker never adds or loses a peso of Total Sales", () 
   assert.equal(totals[0].sales, 600);
   assert.equal(workerNames(order), "Anjo, Randy");
 });
+
+test("the first worker can be taken off a service; nobody left means nothing is credited", async () => {
+  const { assignmentsFor, servicesWithNobody } = await import("./commission.js");
+  const wash = { category: "Premium Wash", price: 250, commissionRate: 30 };
+  const pricing = [{ category: "Premium Wash", processes: [] }];
+
+  assert.deepEqual(assignmentsFor({ ...wash }, pricing[0], "a").map((x) => x.workerId), ["a"], "default: the car's worker");
+  assert.deepEqual(assignmentsFor({ ...wash, doneBy: ["b"] }, pricing[0], "a").map((x) => x.workerId), ["b"], "first worker taken off");
+  assert.deepEqual(assignmentsFor({ ...wash, doneBy: [] }, pricing[0], "a"), []);
+  assert.equal(servicesWithNobody([{ ...wash, doneBy: [] }, { ...wash, doneBy: ["b"] }], pricing, "a").length, 1);
+  assert.equal(servicesWithNobody([{ ...wash, doneBy: [""] }], pricing, "").length, 1, "no car's worker chosen yet");
+});

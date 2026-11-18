@@ -5,18 +5,25 @@ import { signatureUrl, uploadSignature } from "../lib/signatures";
 import SignaturePad from "./SignaturePad";
 
 /*
- * Vale and CM forms (client revision, 2026-11-13; supabase/27).
+ * The Vale form and the Cash Advance form (client revision, 2026-11-13;
+ * kept apart at the client's request, 2026-11-18; supabase/27, 29).
  *
- * Anyone signed in files one: the date, whose it is, the amount and a
- * signature, as on the paper form. A worker files for themself (on the
- * shared worker login, choosing their name), dated today or up to 7 days
- * back. Admins and secretaries file for any active worker, and approve or
- * reject; approved ones come off that week's payslip (Payslips). A worker on
- * a login of their own sees their own forms here; the shared worker login
- * sees none, as everyone uses it.
+ * Two forms laid out the same: the date, whose it is, the amount, a reason
+ * and a signature, as on paper. Each has its own tab, and each tab lists only
+ * its own forms. A worker files for themself (on the shared worker login,
+ * choosing their name), dated today or up to 7 days back. Admins and
+ * secretaries file for any active worker, and approve or reject; approved
+ * ones come off that week's payslip (Payslips). A worker on a login of their
+ * own sees their own forms; the shared worker login sees none, as everyone
+ * uses it.
  */
 
-const KIND_LABEL = { vale: "Vale", cm: "CM" };
+const FORMS = [
+  { kind: "vale", label: "Vale" },
+  { kind: "cash_advance", label: "Cash Advance" },
+];
+
+const KIND_LABEL = Object.fromEntries(FORMS.map((form) => [form.kind, form.label]));
 const STATUS_LABEL = { pending: "Pending", approved: "Approved", rejected: "Rejected" };
 const FILTERS = ["pending", "approved", "rejected", "all"];
 
@@ -24,7 +31,6 @@ const when = (value) => (value ? new Date(value).toLocaleString() : "");
 
 function blankForm(workers) {
   return {
-    kind: "vale",
     workerId: workers.length === 1 ? workers[0].id : "",
     requestDate: localDateString(),
     amount: "",
@@ -85,6 +91,7 @@ function ReviewActions({ request, onReview, busy }) {
 }
 
 export default function Requests({ workers = [], canReview = false, ownLogin = false }) {
+  const [kind, setKind] = useState("vale");
   const [form, setForm] = useState(() => blankForm(workers));
   const [signature, setSignature] = useState(null);
   const [padKey, setPadKey] = useState(0);
@@ -95,6 +102,7 @@ export default function Requests({ workers = [], canReview = false, ownLogin = f
   const [filter, setFilter] = useState("pending");
   const [reviewing, setReviewing] = useState(null);
 
+  const label = KIND_LABEL[kind];
   const today = localDateString();
   const earliest = useMemo(() => {
     const date = new Date(`${today}T00:00:00`);
@@ -120,6 +128,17 @@ export default function Requests({ workers = [], canReview = false, ownLogin = f
     load();
   }, [load]);
 
+  // Another form starts clean: nothing typed or signed for one is filed as
+  // the other.
+  function chooseForm(next) {
+    if (next === kind) return;
+    setKind(next);
+    setForm(blankForm(workers));
+    setSignature(null);
+    setPadKey((key) => key + 1);
+    setMessage(null);
+  }
+
   function update(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
@@ -137,14 +156,14 @@ export default function Requests({ workers = [], canReview = false, ownLogin = f
 
     try {
       const signaturePath = await uploadSignature(signature);
-      const saved = await db.fileRequest({ ...form, signaturePath });
+      const saved = await db.fileRequest({ ...form, kind, signaturePath });
 
       setForm(blankForm(workers));
       setSignature(null);
       setPadKey((key) => key + 1);
       setMessage({
         error: false,
-        text: `${KIND_LABEL[form.kind]} of ${peso.format(Number(form.amount))} for ${saved.worker_name} filed. ${
+        text: `${label} of ${peso.format(Number(form.amount))} for ${saved.worker_name} filed. ${
           canReview ? "Approve it below." : "The office will approve or reject it."
         }`,
       });
@@ -171,31 +190,39 @@ export default function Requests({ workers = [], canReview = false, ownLogin = f
     }
   }
 
-  const shown = requests.filter((request) => filter === "all" || request.status === filter);
-  const pendingCount = requests.filter((request) => request.status === "pending").length;
-  const pendingTotal = requests
-    .filter((request) => request.status === "pending")
-    .reduce((sum, request) => sum + request.amount, 0);
+  const ofThisKind = requests.filter((request) => request.kind === kind);
+  const shown = ofThisKind.filter((request) => filter === "all" || request.status === filter);
+  const pendingOf = (k) => requests.filter((request) => request.kind === k && request.status === "pending");
+  const pending = pendingOf(kind);
+  const pendingTotal = pending.reduce((sum, request) => sum + request.amount, 0);
 
   return (
     <section className="dashboard requests-page">
-      <form className="form-card" onSubmit={submit}>
+      <div className="toggle-group form-tabs" role="tablist" aria-label="Forms">
+        {FORMS.map((option) => (
+          <button
+            key={option.kind}
+            type="button"
+            role="tab"
+            aria-selected={kind === option.kind}
+            className={kind === option.kind ? "active" : ""}
+            onClick={() => chooseForm(option.kind)}
+          >
+            {option.label} Form
+            {canReview && pendingOf(option.kind).length ? ` (${pendingOf(option.kind).length})` : ""}
+          </button>
+        ))}
+      </div>
+
+      <form className="form-card" onSubmit={submit} aria-label={`${label} form`}>
         <div className="section-heading">
           <div>
-            <span className="eyebrow">Vale / CM Form</span>
-            <h2>File a Vale or CM</h2>
+            <span className="eyebrow">{label} Form</span>
+            <h2>File a {label}</h2>
           </div>
         </div>
 
         <div className="form-grid">
-          <label>
-            Type
-            <select value={form.kind} onChange={(e) => update("kind", e.target.value)} disabled={busy}>
-              <option value="vale">Vale (cash advance)</option>
-              <option value="cm">CM</option>
-            </select>
-          </label>
-
           <label>
             Date
             <input
@@ -237,7 +264,7 @@ export default function Requests({ workers = [], canReview = false, ownLogin = f
             />
           </label>
 
-          <label className="wide-field">
+          <label>
             Reason (optional)
             <input type="text" value={form.reason} onChange={(e) => update("reason", e.target.value)} disabled={busy} />
           </label>
@@ -255,14 +282,14 @@ export default function Requests({ workers = [], canReview = false, ownLogin = f
         )}
 
         <button type="submit" className="submit-btn" disabled={busy}>
-          {busy ? "Filing..." : "File Form"}
+          {busy ? "Filing..." : `File ${label}`}
         </button>
       </form>
 
       {listState !== "none" && (
         <div className="chart-card">
           <div className="report-controls">
-            <h3>{canReview ? "Forms" : "My forms"}</h3>
+            <h3>{canReview ? `${label} forms` : `My ${label} forms`}</h3>
             {canReview && (
               <div className="toggle-group">
                 {FILTERS.map((value) => (
@@ -273,22 +300,22 @@ export default function Requests({ workers = [], canReview = false, ownLogin = f
                     onClick={() => setFilter(value)}
                   >
                     {value === "all" ? "All" : STATUS_LABEL[value]}
-                    {value === "pending" && pendingCount ? ` (${pendingCount})` : ""}
+                    {value === "pending" && pending.length ? ` (${pending.length})` : ""}
                   </button>
                 ))}
               </div>
             )}
           </div>
 
-          {canReview && pendingCount > 0 && (
+          {canReview && pending.length > 0 && (
             <p className="report-hint">
-              {pendingCount} waiting for approval, {peso.format(pendingTotal)} in all.
+              {pending.length} waiting for approval, {peso.format(pendingTotal)} in all.
             </p>
           )}
 
           {listState === "loading" && <p className="empty">Loading forms...</p>}
           {listState === "error" && <p className="empty danger-text">Could not load the forms. Reload to try again.</p>}
-          {listState === "ready" && shown.length === 0 && <p className="empty">No forms here.</p>}
+          {listState === "ready" && shown.length === 0 && <p className="empty">No {label} forms here.</p>}
 
           {listState === "ready" && shown.length > 0 && (
             <ul className="request-list">

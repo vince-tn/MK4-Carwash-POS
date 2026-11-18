@@ -31,7 +31,7 @@ const NOTHING = {
   editPricing: false,
   editCommission: false,
   manageAdmins: false,
-  // Phase 2 (supabase/26-28): the quota rules, and approving Vale / CM.
+  // Phase 2 (supabase/26-28): the quota rules, and approving Vale / Cash Advance.
   loadQuota: false,
   reviewRequests: false,
 };
@@ -112,7 +112,7 @@ export function accessFor(access, isLoggedIn) {
 
   if (access.role === "worker") {
     // Only the workers on this login: the worker themselves, or everyone on
-    // the shared worker login. Vale / CM forms for everyone; a payslip only
+    // the shared worker login. Vale / Cash Advance forms for everyone; a payslip only
     // on a login of one's own, since everyone uses the shared one.
     return {
       ...NOTHING,

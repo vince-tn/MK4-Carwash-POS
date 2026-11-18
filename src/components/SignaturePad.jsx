@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 
 /*
- * A box to sign in with a finger, a stylus or the mouse, for Vale and CM
+ * A box to sign in with a finger, a stylus or the mouse, for Vale and Cash Advance
  * forms (supabase/27). Each finished stroke hands the signature to onChange
  * as a PNG; clearing hands it null. The parent remounts it (a new key) to
  * start a fresh one.

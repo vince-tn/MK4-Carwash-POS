@@ -139,7 +139,7 @@ const NAV = [
   { page: "services", label: "Services", short: "Services", icon: Droplets },
   // Phase 2. Spare for admins and secretaries, whose bars are full; a
   // worker's bar has room for them.
-  { page: "requests", label: "Vale / CM", short: "Vale / CM", icon: FileSignature, spare: true },
+  { page: "requests", label: "Vale / Cash Advance", short: "Vale / CA", icon: FileSignature, spare: true },
   { page: "payslips", label: "Payslips", short: "Payslip", icon: Wallet, spare: true },
   { page: "quota", label: "Quota", short: "Quota", icon: Target, spare: true },
   { page: "login", label: "Login", short: "Login", icon: LogIn },
@@ -153,7 +153,7 @@ const PAGE_TITLES = {
   workers: "Employees and Commission",
   logins: "Staff Logins",
   services: "Services and Pricing",
-  requests: "Vale and CM Forms",
+  requests: "Vale and Cash Advance Forms",
   payslips: "Weekly Payslips",
   quota: "Daily Quota and Bonus",
   login: "Staff Login",

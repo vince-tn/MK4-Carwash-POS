@@ -1196,10 +1196,10 @@ export async function removeQuotaSetting(id) {
   return fetchQuotaSettings();
 }
 
-/* ------------------------------------------------------------ Vale and CM */
+/* --------------------------------------------------- Vale and Cash Advance */
 
 /*
- * Vale and CM forms (supabase/27): filed with a signature, then approved or
+ * Vale and Cash Advance forms (supabase/27, 29): filed with a signature, then approved or
  * rejected by an admin or secretary. Approved ones come off that week's
  * payslip.
  */

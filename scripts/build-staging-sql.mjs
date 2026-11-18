@@ -4,7 +4,7 @@
 //
 //   staging-1.sql  the live schema snapshot, the rows the app expects, 10-14
 //   staging-2.sql  15-22
-//   staging-3.sql  the default price list, 23-28, two test workers, a summary
+//   staging-3.sql  the default price list, 23-29, two test workers, a summary
 //
 // Three, not one: 14 creates a constraint that 15 drops, and Postgres refuses
 // to do both in one transaction ("could not open relation with OID ...").
@@ -103,6 +103,7 @@ select 'service_percent', 0
       "26_daily_quota_bonus.sql",
       "27_vale_and_cm.sql",
       "28_weekly_payslips.sql",
+      "29_cash_advance_replaces_cm.sql",
     ].map(read),
     `-- ===== staging marker =====
 -- The weekly refresh (.github/workflows/staging-refresh.yml) empties and

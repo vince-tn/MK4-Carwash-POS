@@ -143,7 +143,8 @@ export function commissionForAddedLines({ services, addOnLines, worker, commissi
  * Who did a service, as the form holds it: "" stands for the car's own
  * worker, so changing that worker moves every line left on them.
  *   service.steps   { [step id]: worker id or "" }, for a service with steps
- *   service.doneBy  [worker id or ""], for one without (default [""])
+ *   service.doneBy  [worker id or ""], for one without (default [""]); an
+ *                   empty list is nobody yet, and the form will not save it
  */
 export function assignmentsFor(service, category, leadId) {
   const who = (workerId) => workerId || leadId || "";
@@ -157,7 +158,8 @@ export function assignmentsFor(service, category, leadId) {
     }));
   }
 
-  const ids = [...new Set((service.doneBy?.length ? service.doneBy : [""]).map(who))];
+  const doneBy = Array.isArray(service.doneBy) ? service.doneBy : [""];
+  const ids = [...new Set(doneBy.map(who))].filter(Boolean);
   return ids.map((workerId) => ({ workerId, process: "", weight: 0 }));
 }
 
@@ -183,6 +185,18 @@ export function addOnLineFor(addOn, { qty = 1, workerId = "", laborAmount, labor
     details: isLabor ? String(laborDetails || "").trim() : "",
     workerId: workerId || leadId || "",
   };
+}
+
+// The services nobody has been put on yet, for the form to refuse to save.
+export function servicesWithNobody(services, pricingData, leadId) {
+  return services.filter(
+    (service) =>
+      !assignmentsFor(
+        service,
+        pricingData.find((item) => item.category === service.category),
+        leadId
+      ).some((assignment) => assignment.workerId)
+  );
 }
 
 export function shareOut(assignments) {

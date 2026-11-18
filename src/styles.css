@@ -2434,7 +2434,7 @@ select.done-by-add {
   transform: none;
 }
 
-/* --- Vale / CM forms, payslips and quota (Phase 2, supabase/26-28) --- */
+/* --- Vale / Cash Advance forms, payslips and quota (Phase 2, supabase/26-29) --- */
 
 .field-label {
   display: block;
@@ -2700,4 +2700,20 @@ select.done-by-add {
     break-after: page;
     border: 0;
   }
+}
+
+.done-by-empty {
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+/* The Vale form and the Cash Advance form: one tab each, the same layout. */
+.form-tabs {
+  align-self: flex-start;
+  margin-bottom: 4px;
+}
+
+.form-tabs button {
+  font-size: 15px;
 }
